@@ -2,6 +2,7 @@
 videos/
 model/
 stl2mjcf/
+stl2mjcf.py
 
 
 # Byte-compiled / optimized / DLL files
