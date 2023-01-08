@@ -1,13 +1,18 @@
-from dm_control import mjcf
-from pprint import pprint
-from dm_control.composer.observation import observable
-from math import pi, sin, cos, tan
+import math
+import cv2
 import numpy as np
-import mujoco
+
+from dm_control import mjcf
 from dm_control import composer
 from dm_control.composer import variation
-from dm_control.composer.variation import distributions
-from dm_control.composer.variation import noises
+from dm_control.composer.variation import distributions, noises
+from dm_control.composer.observation import observable
+from dm_control.suite.wrappers.pixels import Wrapper
+from dm_control.composer.observation.observable import MujocoCamera
+
+
+_DEFAULT_TIME_LIMIT = 50
+_CONTROL_TIMESTEP = .005
 
 SCALE = 1
 RGBA = [0.2, 0.2, 0.2, 1]
@@ -18,19 +23,26 @@ OFFSET = SPHERE_RADIUS + CYLINDER_HEIGHT * 2
 TWIST = False
 STRETCH = False
 FORCE = 300
-TARGET_POS = (-0.043094, 0.13715, 0.033513)
+STIFFNESS = 10
+TARGET_POS = (-0.043094, 0.14015, 0.033013)
+MARGIN = 0.004
+CONDIM = 1
+FRICTION = [0.2, 0.002, 0.001]
 
-NUM_SUBSTEPS = 5
+NUM_SUBSTEPS = 4
 
-TIP_N_BODIES = 4
-TIP_REF = pi / 2 / TIP_N_BODIES - 1
+TIP_N_BODIES = 3
+TIP_REF = math.pi / 2 / TIP_N_BODIES - 1
 
 random_state = np.random.RandomState(42)
 
 
 class Scene(composer.Arena):
 
-    def _build(self, name: str = 'arena'):
+    def _build(self,
+               name: str = 'arena',
+               render_site: bool = True,
+               ):
         super()._build(name=name)
 
         self._mjcf_root.compiler.set_attributes(
@@ -39,31 +51,31 @@ class Scene(composer.Arena):
             autolimits=True,
         )
         self._mjcf_root.option.set_attributes(
-            tolerance=0,
-            timestep=0.002,
-            viscosity=3.5,
-            density=997,
-            solver='Newton',         # pgs, cg, newton
-            integrator='Euler',      # euler, rk4, implicit
+            timestep=_CONTROL_TIMESTEP,
+            viscosity=0.0009 * 4,
+            density=1060,
+            solver='newton',         # pgs, cg, newton
+            integrator='euler',      # euler, rk4, implicit
             cone='pyramidal',          # pyramidal, elliptic
-            jacobian='sparse',
+            # jacobian='sparse',
         )
 
         self._mjcf_root.option.flag.set_attributes(
-            multiccd='disable',
-            frictionloss="disable",
-            gravity="enable",
+            # multiccd='disable',
+            # frictionloss="disable",
+            gravity="disable",
         )
 
         self._mjcf_root.size.set_attributes(
             njmax=2000,
-            nconmax=1000,
+            nconmax=2000,
+            # memory="1G",
         )
 
         self._mjcf_root.default.site.set_attributes(
             type='sphere',
-            size=[SPHERE_RADIUS],
-            rgba=[0.3, 0, 0, 0.7],
+            size=[0.004],
+            rgba=[0.8, 0.8, 0.8, 0],
         )
 
         self._top_camera = self._mjcf_root.worldbody.add(
@@ -78,10 +90,35 @@ class Scene(composer.Arena):
         self._mjcf_root.worldbody.add('light', pos=[0, 0, 10], dir=[20, 20, -20],
                                       castshadow=False)
 
-        self._mjcf_root.worldbody.add('site', pos=TARGET_POS)
+        site = self._mjcf_root.worldbody.add('site', pos=TARGET_POS)
+        if render_site:
+            site.rgba = self._mjcf_root.default.site.rgba
+            site.rgba[-1] = 1
 
     def regenerate(self, random_state):
         pass
+
+
+class CameraObservable(MujocoCamera):
+    def __init__(self, camera_name, height=128, width=128, corruptor=None,
+                 depth=False, preprocess=True, grayscale=True):
+        super().__init__(camera_name, height, width, corruptor, depth)
+        self._preprocess = preprocess
+        self._grayscale = grayscale
+        self._dtype = np.float32 if depth or grayscale or preprocess else np.int8
+        self._n_channels = 1 if depth or grayscale else 3
+
+    def _callable(self, physics):
+        def get_image():
+            image = physics.render(  # pylint: disable=g-long-lambda
+                self._height, self._width, self._camera_name, depth=self._depth)
+            if self._grayscale:
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            if self._preprocess and not self._depth:
+                image = image / 255.0 - 0.5
+            return image
+
+        return get_image
 
 
 def add_body(
@@ -96,11 +133,9 @@ def add_body(
     child.add('geom', name=f'geom_{n}')
     j0 = child.add('joint', name=f'J0_{n}', axis=[1, 0, 0])
     j1 = child.add('joint', name=f'J1_{n}', axis=[0, 1, 0])
-    if ref is not None:
-        j1.ref = ref
     if stiffness is not None:
-        j1.stiffness = stiffness
         j0.stiffness = stiffness
+        j1.stiffness = stiffness
 
     return child
 
@@ -114,10 +149,14 @@ class Guidewire(composer.Entity):
         self._mjcf_root = mjcf.RootElement(model="guidewire")
 
         self._mjcf_root.default.geom.set_attributes(
-            rgba=[0.2, 0.2, 0.2, 1],
+            group=1,
+            rgba=[0.1, 0.1, 0.1, 1],
             type='capsule',
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             density=7980,
+            margin=MARGIN,
+            condim=CONDIM, friction=FRICTION,
+            # fluidshape='ellipsoid',
         )
 
         self._mjcf_root.default.joint.set_attributes(
@@ -125,15 +164,16 @@ class Guidewire(composer.Entity):
             pos=[0, 0, -OFFSET / 2],
             ref=0,
             damping=0.005,
-            stiffness=2,
+            stiffness=STIFFNESS,
             springref=0,
             armature=0.05,
+            axis=[0, 0, 1],
         )
 
         self._mjcf_root.default.site.set_attributes(
             type='sphere',
             size=[SPHERE_RADIUS],
-            rgba=[0.3, 0, 0, 0.7],
+            rgba=[0.3, 0, 0, 0.0],
         )
 
         self._mjcf_root.default.velocity.set_attributes(
@@ -144,30 +184,23 @@ class Guidewire(composer.Entity):
 
         parent = self._mjcf_root.worldbody.add('body',
                                                name='body_0',
-                                               pos=[0, -self._length, 0],
-                                               euler=[-pi / 2, 0, pi],
+                                               euler=[-math.pi / 2, 0, math.pi],
                                                )
         parent.add('geom', name='geom_0')
-        parent.add('joint', type='slide', name='slider', axis=[0, 0, 1], range=[-0, 0.2])
-        parent.add('joint', type='hinge', name='rotator', axis=[0, 0, 1], stiffness=0, damping=2)
+        parent.add('joint', type='slide', name='slider', range=[-0, 0.2])
+        parent.add('joint', type='hinge', name='rotator', stiffness=0, damping=2)
         self._mjcf_root.actuator.add('velocity', joint='slider', name='slider_actuator')
-        self._mjcf_root.actuator.add(
-            'general',
-            joint='rotator',
-            name='rotator_actuator',
-            dyntype=None,
-            gaintype='fixed',
-            biastype='None',
-            dynprm=[1, 0, 0],
-            gainprm=[40, 0, 0],
-            biasprm=[2],
-        )
+        self._mjcf_root.actuator.add('general', joint='rotator', name='rotator_actuator',
+                                     dyntype=None, gaintype='fixed', biastype='None',
+                                     dynprm=[1, 0, 0], gainprm=[40, 0, 0], biasprm=[2])
 
         # make the main body
+        stiffness = self._mjcf_root.default.joint.stiffness
         for n in range(1, n_bodies):
-            parent = add_body(n, parent, ref=0)
+            parent = add_body(n, parent, stiffness=stiffness)
+            stiffness *= 0.98
 
-        self._tip_site = parent.add('site', name='tip_site', pos=[0, 0, OFFSET / 2])
+        self._tip_site = parent.add('site', name='tip_site', pos=[0, 0, OFFSET])
 
     @property
     def attachment_site(self):
@@ -176,10 +209,6 @@ class Guidewire(composer.Entity):
     @property
     def mjcf_model(self):
         return self._mjcf_root
-
-    @property
-    def tip_site(self):
-        return self._tip_site
 
     def _build_observables(self):
         return GuidewireObservables(self)
@@ -211,8 +240,10 @@ class Phantom(composer.Entity):
         self._rgba = [111 / 255, 18 / 255, 0 / 255, 0]
         self._mjcf_root = mjcf.from_file(xml_path, **kwargs)
         self._mjcf_root.default.geom.set_attributes(
+            group=0,
             rgba=self._rgba,
-            margin=0.002,
+            margin=MARGIN,
+            condim=CONDIM, friction=FRICTION,
         )
         self._rgba[-1] = 0.3
         self._mjcf_root.find('geom', 'visual').rgba = self._rgba
@@ -224,22 +255,26 @@ class Phantom(composer.Entity):
 
 class Tip(composer.Entity):
 
-    def _build(self, name=None, n_bodies=4):
+    def _build(self, name=None, n_bodies=3):
 
         if name is None:
             name = 'tip'
         self._mjcf_root = mjcf.RootElement(model=name)
 
         self._mjcf_root.default.geom.set_attributes(
+            group=2,
             rgba=[0., 0.2, 0, 1],
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             type="capsule",
+            margin=MARGIN,
+            condim=CONDIM, friction=FRICTION,
         )
 
         self._mjcf_root.default.joint.set_attributes(
             type='hinge',
             pos=[0, 0, -OFFSET / 2],
-            ref=0.02,
+            springref=math.pi / 4 / n_bodies,
+            # ref=pi / 2 / n_bodies - 1,
             damping=0.5,
             stiffness=1,
             armature=0.05,
@@ -257,7 +292,7 @@ class Tip(composer.Entity):
         parent.add('joint', name='T1_0', axis=[0, 1, 0])
 
         for n in range(1, n_bodies):
-            parent = add_body(n, parent, ref=pi / 2 / n_bodies - 1)
+            parent = add_body(n, parent)
 
         self.head_geom.name = 'head'
 
@@ -297,14 +332,16 @@ class Navigate(composer.Task):
                  guidewire: composer.Entity = None,
                  tip: composer.Entity = None,
                  obs_type: str = 'full',
-                 delta: float = 0.008,  # distance threshold for success
+                 delta: float = 0.004,  # distance threshold for success
                  dense_reward: bool = True,
                  success_reward: float = 10.0,
+                 use_image: bool = False,
                  ):
 
         self.delta = delta
         self.dense_reward = dense_reward
         self.success_reward = success_reward
+        self.use_image = use_image
 
         self._arena = Scene("arena")
         if phantom is not None:
@@ -318,7 +355,7 @@ class Navigate(composer.Task):
             self._arena.attach(self._guidewire)
 
         # Configure initial poses
-        self._guidewire_initial_pose = (0, 0, 0)
+        self._guidewire_initial_pose = [0, -(self._guidewire._length - 0.015), 0]
         self._target_pos = TARGET_POS
 
         # Configure variators
@@ -326,17 +363,25 @@ class Navigate(composer.Task):
         self._physics_variator = variation.PhysicsVariator()
 
         # Configure and enable observables
-        pos_corrptor = noises.Additive(distributions.Normal(scale=0.0))
+        pos_corrptor = noises.Additive(distributions.Normal(scale=0.0001))
         self._guidewire.observables.joint_positions.corruptor = pos_corrptor
-        self._guidewire.observables.joint_positions.enabled = True
-        vel_corruptor = noises.Multiplicative(distributions.LogNormal(sigma=0.0))
+        vel_corruptor = noises.Multiplicative(distributions.LogNormal(sigma=0.0001))
         self._guidewire.observables.joint_velocities.corruptor = vel_corruptor
+
+        self._guidewire.observables.joint_positions.enabled = True
         self._guidewire.observables.joint_velocities.enabled = True
 
         self._tip.observables.joint_positions.enabled = True
         self._tip.observables.joint_velocities.enabled = True
 
         self._task_observables = {}
+
+        if self.use_image:
+            self._task_observables['top_camera'] = CameraObservable(
+                camera_name='top_camera',
+                width=128,
+                height=128,
+            )
 
         for obs in self._task_observables.values():
             print(obs)
@@ -359,9 +404,9 @@ class Navigate(composer.Task):
 
     def initialize_episode(self, physics, random_state):
         self._physics_variator.apply_variations(physics, random_state)
-        creature_pose = variation.evaluate(self._guidewire_initial_pose,
-                                           random_state=random_state)
-        self._guidewire.set_pose(physics, position=creature_pose)
+        guidewire_pose = variation.evaluate(self._guidewire_initial_pose,
+                                            random_state=random_state)
+        self._guidewire.set_pose(physics, position=guidewire_pose)
         self.success = False
 
     def get_reward(self, physics):
@@ -369,15 +414,7 @@ class Navigate(composer.Task):
         reward = self.compute_reward(head_pos, self._target_pos)
         return reward
 
-    def should_terminate_episode(self, physics):  # pylint: disable=unused-argument
-        """Determines whether the episode should terminate given the physics state.
-
-        Args:
-          physics: A Physics object
-
-        Returns:
-          A boolean
-        """
+    def should_terminate_episode(self, physics):
         return self.success
 
     @property
@@ -394,3 +431,38 @@ class Navigate(composer.Task):
             reward = self.success_reward if success else -1.0
         self.success = success
         return reward
+
+
+if __name__ == "__main__":
+    from dm_control import viewer
+
+    phantom = Phantom("assets/phantom3.xml", model_dir="./assets")
+    tip = Tip(n_bodies=4)
+    guidewire = Guidewire(n_bodies=80)
+    task = Navigate(
+        phantom=phantom,
+        guidewire=guidewire,
+        tip=tip,
+        use_image=True
+    )
+    env = composer.Environment(
+        task=task,
+        time_limit=_DEFAULT_TIME_LIMIT,
+        random_state=np.random.RandomState(42),
+        strip_singleton_obs_buffer_dim=True,
+    )
+
+    mjcf.export_with_assets(task._arena._mjcf_root, './model')
+
+    action_spec = env.action_spec()
+    time_step = env.reset()
+    for key, value in time_step.observation.items():
+        print(key, value.shape)
+
+    def random_policy(time_step):
+        del time_step
+        return np.random.uniform(low=action_spec.minimum,
+                                 high=action_spec.maximum,
+                                 size=action_spec.shape)
+
+    viewer.launch(env, policy=random_policy)
