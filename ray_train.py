@@ -5,10 +5,12 @@ import numpy as np
 
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
+from ray.rllib.algorithms.mbmpo.mbmpo import MBMPOConfig
+from ray.rllib.algorithms.dreamer import DreamerConfig
 from ray.tune.registry import register_env
 from ray.rllib.utils import check_env
 
-from wrapper import DMEnv
+from wrapper import DMEnv, MPO
 from gymnasium.wrappers import TimeLimit, FrameStack, RecordVideo
 
 from dm_control import composer
@@ -24,6 +26,7 @@ def env_creator(env_config=None):
         phantom=phantom,
         guidewire=guidewire,
         tip=tip,
+        dense_reward=False,
     )
     env = composer.Environment(
         task=task,
@@ -31,17 +34,24 @@ def env_creator(env_config=None):
         random_state=np.random.RandomState(42),
         strip_singleton_obs_buffer_dim=True,
     )
-    render_kwargs = {'width': 128, 'height': 128}
+    render_kwargs = {'width': 64, 'height': 64}
     env = DMEnv(
         env=env,
         from_pixels=False,
-        time_limit=200,
+        time_limit=300,
         render_kwargs=render_kwargs,
-        use_image=False,
-        channels_first=False,
     )
+    # env = MPO(
+    #     env=env,
+    #     from_pixels=False,
+    #     time_limit=300,
+    #     render_kwargs=render_kwargs,
+    #     use_image=False,
+    #     channels_first=True,
+    #     grayscale=True,
+    #     preprocess=True
+    # )
     env = TimeLimit(env, max_episode_steps=200)
-    # env = Wrapper(env, pixels_only=True)
     # env = FrameStack(env, 4)
     # env = RecordVideo(env, video_folder='./videos')
     return env
@@ -53,27 +63,37 @@ def env_creator(env_config=None):
 register_env("cathsim", env_creator)
 
 algo = (
-    PPOConfig()
+    MBMPOConfig()
     .environment(env="cathsim")
     .resources(num_gpus=1)
-    # .framework("tf2")
-    .training(
-        model={
-            # == LSTM ==
-            # Whether to wrap the model with an LSTM.
-            "use_lstm": True,
-            # Max seq len for training the LSTM, defaults to 20.
-            "max_seq_len": 20,
-            # Size of the LSTM cell.
-            "lstm_cell_size": 256,
-            # Whether to feed a_{t-1} to LSTM (one-hot encoded if discrete).
-            "lstm_use_prev_action": True,
-            # Whether to feed r_{t-1} to LSTM.
-            "lstm_use_prev_reward": True,
-            # Whether the LSTM is time-major (TxBx..) or batch-major (BxTx..).
-            "_time_major": False,
-        }
-    )
+    .framework("torch")
+    # .training(
+    #     model={
+    #         # == LSTM ==
+    #         # Whether to wrap the model with an LSTM.
+    #         "use_lstm": True,
+    #         # Max seq len for training the LSTM, defaults to 20.
+    #         "max_seq_len": 20,
+    #         # Size of the LSTM cell.
+    #         "lstm_cell_size": 256,
+    #         # Whether to feed a_{t-1} to LSTM (one-hot encoded if discrete).
+    #         "lstm_use_prev_action": True,
+    #         # Whether to feed r_{t-1} to LSTM.
+    #         "lstm_use_prev_reward": True,
+    #         # Whether the LSTM is time-major (TxBx..) or batch-major (BxTx..).
+    #         "_time_major": False,
+    #     }
+    # )
+    # .exploration(
+    #     exploration_config={
+    #         "type": "RE3",
+    #         "embeds_dim": 128,
+    #         "beta_schedule": "constant",
+    #         "sub_exploration": {
+    #             "type": "StochasticSampling",
+    #         }
+    #     }
+    # )
     .build()
 )
 # ppo latest checkpoint

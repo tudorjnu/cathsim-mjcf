@@ -21,6 +21,7 @@ def env_creator(env_config=None):
         phantom=phantom,
         guidewire=guidewire,
         tip=tip,
+        dense_reward=False,
     )
     env = composer.Environment(
         task=task,
@@ -46,16 +47,26 @@ def env_creator(env_config=None):
 register_env("cathsim", env_creator)
 
 algo = (
-    SACConfig()
-    # .framework("torch")
+    PPOConfig()
     .environment(env="cathsim")
     .resources(num_gpus=1)
+    # .framework("tf2")
+    .exploration(
+        exploration_config={
+            "type": "RE3",
+            "embeds_dim": 128,
+            "beta_schedule": "constant",
+            "sub_exploration": {
+                "type": "StochasticSampling",
+            }
+        }
+    )
     .build()
 )
 
 env = env_creator()
 
-algo.restore('/home/tudorjnu/ray_results/SAC_cathsim_2023-01-07_16-57-50ucpfx23a/checkpoint_000322')
+algo.restore('/home/tudorjnu/ray_results/PPO_cathsim_2023-01-09_21-41-27h8dcxi0k/checkpoint_000181')
 
 obs, info = env.reset()
 terminated = truncated = False

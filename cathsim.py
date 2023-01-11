@@ -2,13 +2,12 @@ import math
 import cv2
 import numpy as np
 
-from dm_control import mjcf
-from dm_control import composer
+from dm_control import mjcf, mujoco, composer
 from dm_control.composer import variation
 from dm_control.composer.variation import distributions, noises
 from dm_control.composer.observation import observable
 from dm_control.suite.wrappers.pixels import Wrapper
-from dm_control.composer.observation.observable import MujocoCamera
+from dm_control.composer.observation.observable import MujocoCamera, MujocoFeature
 
 
 _DEFAULT_TIME_LIMIT = 50
@@ -26,7 +25,7 @@ FORCE = 300
 STIFFNESS = 10
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
 MARGIN = 0.004
-CONDIM = 1
+CONDIM = 3
 FRICTION = [0.2, 0.002, 0.001]
 
 NUM_SUBSTEPS = 4
@@ -124,13 +123,15 @@ class CameraObservable(MujocoCamera):
 def add_body(
         n: int = 0,
         parent: mjcf.Element = None,  # the parent body
+        geom_size: float = None,
         ref: float = None,  # the reference angle of the joint
         stiffness: float = None,  # the stiffness of the joint
         stretch: bool = False,
         twist: bool = False,
 ):
-    child = parent.add('body', name=f"body_{n}", pos=[0, 0, OFFSET])
+    child = parent.add('body', name=f"body_{n}")
     child.add('geom', name=f'geom_{n}')
+    child.pos = [0, 0, geom_size[0] + geom_size[1] * 2]
     j0 = child.add('joint', name=f'J0_{n}', axis=[1, 0, 0])
     j1 = child.add('joint', name=f'J1_{n}', axis=[0, 1, 0])
     if stiffness is not None:
@@ -155,7 +156,8 @@ class Guidewire(composer.Entity):
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             density=7980,
             margin=MARGIN,
-            condim=CONDIM, friction=FRICTION,
+            condim=CONDIM,
+            friction=FRICTION,
             # fluidshape='ellipsoid',
         )
 
@@ -197,7 +199,7 @@ class Guidewire(composer.Entity):
         # make the main body
         stiffness = self._mjcf_root.default.joint.stiffness
         for n in range(1, n_bodies):
-            parent = add_body(n, parent, stiffness=stiffness)
+            parent = add_body(n, parent, stiffness=stiffness, geom_size=self._mjcf_root.default.geom.size)
             stiffness *= 0.98
 
         self._tip_site = parent.add('site', name='tip_site', pos=[0, 0, OFFSET])
@@ -210,9 +212,6 @@ class Guidewire(composer.Entity):
     def mjcf_model(self):
         return self._mjcf_root
 
-    def _build_observables(self):
-        return GuidewireObservables(self)
-
     @property
     def actuators(self):
         return tuple(self._mjcf_root.find_all('actuator'))
@@ -220,6 +219,9 @@ class Guidewire(composer.Entity):
     @property
     def joints(self):
         return tuple(self._mjcf_root.find_all('joint'))
+
+    def _build_observables(self):
+        return GuidewireObservables(self)
 
 
 class GuidewireObservables(composer.Observables):
@@ -234,16 +236,23 @@ class GuidewireObservables(composer.Observables):
         all_joints = self._entity.mjcf_model.find_all('joint')
         return observable.MJCFFeature('qvel', all_joints)
 
+    @composer.observable
+    def actuators_control(self):
+        all_actuators = self._entity.mjcf_model.find_all('actuator')
+        return observable.MJCFFeature('ctrl', all_actuators)
+
 
 class Phantom(composer.Entity):
     def _build(self, xml_path, **kwargs):
         self._rgba = [111 / 255, 18 / 255, 0 / 255, 0]
         self._mjcf_root = mjcf.from_file(xml_path, **kwargs)
+        self._mjcf_root.model = "phantom"
         self._mjcf_root.default.geom.set_attributes(
             group=0,
             rgba=self._rgba,
             margin=MARGIN,
-            condim=CONDIM, friction=FRICTION,
+            condim=CONDIM,
+            friction=FRICTION,
         )
         self._rgba[-1] = 0.3
         self._mjcf_root.find('geom', 'visual').rgba = self._rgba
@@ -251,6 +260,17 @@ class Phantom(composer.Entity):
     @property
     def mjcf_model(self):
         return self._mjcf_root
+
+    def _build_observables(self):
+        return PhantomObservables(self)
+
+
+class PhantomObservables(composer.Observables):
+
+    @composer.observable
+    def geom_pos(self):
+        all_geoms = self._entity.mjcf_model.find_all('geom')
+        return observable.MJCFFeature('pos', all_geoms)
 
 
 class Tip(composer.Entity):
@@ -292,7 +312,7 @@ class Tip(composer.Entity):
         parent.add('joint', name='T1_0', axis=[0, 1, 0])
 
         for n in range(1, n_bodies):
-            parent = add_body(n, parent)
+            parent = add_body(n, parent, geom_size=self._mjcf_root.default.geom.size)
 
         self.head_geom.name = 'head'
 
@@ -304,12 +324,12 @@ class Tip(composer.Entity):
     def joints(self):
         return tuple(self._mjcf_root.find_all('joint'))
 
-    def _build_observables(self):
-        return TipObservables(self)
-
     @property
     def head_geom(self):
         return self._mjcf_root.find_all('geom')[-1]
+
+    def _build_observables(self):
+        return TipObservables(self)
 
 
 class TipObservables(composer.Observables):
@@ -336,12 +356,14 @@ class Navigate(composer.Task):
                  dense_reward: bool = True,
                  success_reward: float = 10.0,
                  use_image: bool = False,
+                 use_action: bool = True,
                  ):
 
         self.delta = delta
         self.dense_reward = dense_reward
         self.success_reward = success_reward
         self.use_image = use_image
+        self.use_action = use_action
 
         self._arena = Scene("arena")
         if phantom is not None:
@@ -370,9 +392,12 @@ class Navigate(composer.Task):
 
         self._guidewire.observables.joint_positions.enabled = True
         self._guidewire.observables.joint_velocities.enabled = True
+        self._guidewire.observables.actuators_control.enabled = True
 
         self._tip.observables.joint_positions.enabled = True
         self._tip.observables.joint_velocities.enabled = True
+
+        self._phantom.observables.geom_pos.enabled = True
 
         self._task_observables = {}
 
@@ -382,6 +407,10 @@ class Navigate(composer.Task):
                 width=128,
                 height=128,
             )
+
+        # self._task_observables['contact_force'] = observable.Generic(self.get_contact_forces)
+        # self._task_observables['contact_pos'] = observable.Generic(self.get_contact_positions)
+        self._task_observables['activation'] = observable.Generic(self.get_control)
 
         for obs in self._task_observables.values():
             print(obs)
@@ -432,6 +461,40 @@ class Navigate(composer.Task):
         self.success = success
         return reward
 
+    def get_control(self, physics):
+        return physics.control()
+
+    def get_contact_forces(self, physics):
+        contact_forces = []
+        for i in range(physics.data.ncon):
+            contact_force = physics.data.contact_force(i)
+            contact_forces.append(contact_force)
+        return contact_forces
+
+    def get_contact_positions(self, physics):
+        return physics.data.contact.pos
+
+
+class Physics(mujoco.Physics):
+    """Physics with additional features for the Planar Manipulator domain."""
+
+    def joint_pos(self):
+        pass
+
+    def joint_vel(self):
+        pass
+
+    def site_distance(self, site1, site2):
+        site1_to_site2 = np.diff(self.named.data.site_xpos[[site2, site1]], axis=0)
+        return np.linalg.norm(site1_to_site2)
+
+    def get_contacts(self):
+        self.data.contact_force
+        return
+
+    def get_activation(self):
+        return self.activation()
+
 
 if __name__ == "__main__":
     from dm_control import viewer
@@ -439,6 +502,7 @@ if __name__ == "__main__":
     phantom = Phantom("assets/phantom3.xml", model_dir="./assets")
     tip = Tip(n_bodies=4)
     guidewire = Guidewire(n_bodies=80)
+    # print(Guidewire.actuators[0])
     task = Navigate(
         phantom=phantom,
         guidewire=guidewire,

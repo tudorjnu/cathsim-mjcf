@@ -198,6 +198,20 @@ class DMEnv(core.Env):
         return img
 
 
+class MPO(DMEnv):
+    """Wrapper for the CartPole-v1 environment.
+    Adds an additional `reward` method for some model-based RL algos (e.g.
+    MB-MPO).
+    """
+
+    def __init__(self, env, **kwargs):
+        super().__init__(self, env, **kwargs)
+
+    def reward(self, obs, action, obs_next):
+        reward = -1
+        return reward
+
+
 if __name__ == "__main__":
     from dm_control import composer
     from cathsim import Navigate, Tip, Guidewire, Phantom
