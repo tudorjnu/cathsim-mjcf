@@ -10,6 +10,7 @@ from dm_control import mjcf
 from dm_control.mujoco.wrapper import mjbindings
 import numpy as np
 from cathsim import Scene, Guidewire, Tip, Navigate, Phantom
+from wrapper import DMEnv
 
 mjlib = mjbindings.mjlib
 
@@ -108,6 +109,29 @@ class NavigateTest(parameterized.TestCase):
             len(observables['guidewire/tip/joint_positions']) ==
             len(observables['guidewire/tip/joint_velocities']) ==
             tip_n_bodies * 2)
+
+    def test_image_observation_space(self):
+
+        guidewire_n_bodies = 10
+        tip_n_bodies = 4
+        tip = Tip(n_bodies=tip_n_bodies)
+        guidewire = Guidewire(n_bodies=guidewire_n_bodies)
+
+        task = Navigate(
+            guidewire=guidewire,
+            tip=tip,
+        )
+
+        env = composer.Environment(
+            task=task,
+            time_limit=2000,
+            random_state=np.random.RandomState(42),
+            strip_singleton_obs_buffer_dim=True,
+        )
+
+        env = DMEnv(env, from_pixels=True, render_kwargs={
+                    'width': 64, 'height': 64})
+        self.assertTrue(env.observation_space.shape == (3, 64, 64))
 
 
 if __name__ == "__main__":

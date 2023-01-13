@@ -1,5 +1,6 @@
 from dm_control.suite.wrappers.pixels import Wrapper
 from gymnasium import core, spaces
+import gymnasium as gym
 
 try:
     from dm_env import specs
@@ -207,6 +208,37 @@ class DMEnv(core.Env):
         return -1
 
 
+class ActionDiscretizer(gym.ActionWrapper):
+    def __init__(self, env, num_actions, actions_per_dimension=3):
+        super(ActionDiscretizer, self).__init__(env)
+        self._num_actions = env.action_space.shape[0]
+        self._action_space = spaces.MultiDiscrete(
+            actions_per_dimension for _ in range(self._num_actions))
+
+    def action(self, action):
+        return self._continuous_to_discrete(action)
+
+    def _continuous_to_discrete(self, action):
+        if action[0] < -0.5:
+            action[0] = 0
+        elif action[0] > 0.5:
+            action[0] = 2
+        else:
+            action[0] = 1
+
+        return action
+
+
+class MBPOWrapper(Wrapper):
+    """Wrapper for the CartPole-v1 environment.
+    Adds an additional `reward` method for some model-based RL algos (e.g.
+    MB-MPO).
+    """
+
+    def __init__(self, env):
+        super().__init__(env)
+
+
 if __name__ == "__main__":
     from dm_control import composer
     from cathsim import Navigate, Tip, Guidewire, Phantom
@@ -228,16 +260,17 @@ if __name__ == "__main__":
     )
 
     render_kwargs = {'width': 128, 'height': 128}
-    env = DMEnv(env, from_pixels=True, render_kwargs=render_kwargs)
+    env = DMEnv(
+        env,
+        render_kwargs=render_kwargs,
+    )
+
+    env = MBPOWrapper(env)
     print(env.observation_space)
     done = False
     obs = env.reset()
     while not done:
-        pixels = env.render()
-        pixels = cv2.cvtColor(pixels, cv2.COLOR_BGR2RGB)
-        cv2.imshow("Observation", pixels)
-        cv2.waitKey(1)
         action = env.action_space.sample()
         obs, reward, terminated, truncated, extra = env.step(action)
         print(obs.shape)
-        print(reward)
+        exit()

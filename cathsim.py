@@ -461,33 +461,52 @@ class Application(viewer.application.Application):
     def __init__(self, title, width, height):
         super().__init__(title, width, height)
 
-        self._keyboard.on_key_hold += self._handle_key
         self._input_map.bind(self._move_forward,  viewer.user_input.KEY_UP)
         self._input_map.bind(self._move_back,  viewer.user_input.KEY_DOWN)
+        self._input_map.bind(self._move_left,  viewer.user_input.KEY_LEFT)
+        self._input_map.bind(self._move_right,  viewer.user_input.KEY_RIGHT)
 
     def _move_forward(self):
         action = self._environment.action_spec()
-        action = np.zeros_like(action.shape)
+        action = np.zeros(shape=action.shape)
         action[0] = 1
         self._runtime._time_step = self._runtime._env.step(action)
         self._runtime._last_action = action
         finished = self._runtime._time_step.last()
-        print("moving forward")
+        # print("moving forward")
         return finished or self._runtime._error_logger.errors_found
 
     def _move_back(self):
         action = self._environment.action_spec()
-        action = np.zeros_like(action.shape)
+        action = np.zeros(shape=action.shape)
         action[0] = -1
         self._runtime._time_step = self._runtime._env.step(action)
         self._runtime._last_action = action
         finished = self._runtime._time_step.last()
-        print("moving backward")
+        # print("moving backward")
         return finished or self._runtime._error_logger.errors_found
 
-    def _advance_simulation(self):
-        if self._runtime:
-            self._runtime.single_step()
+    def _move_left(self):
+        action = self._environment.action_spec()
+        action = np.zeros(shape=action.shape)
+        action[1] = -1
+        self._runtime._time_step = self._runtime._env.step(action)
+        self._runtime._last_action = action
+        finished = self._runtime._time_step.last()
+        # print("moving left")
+        return finished or self._runtime._error_logger.errors_found
+
+    def _move_right(self):
+        action = self._environment.action_spec()
+        print(action.shape)
+        action = np.zeros(shape=action.shape)
+        print(action.shape)
+        action[1] = 1
+        self._runtime._time_step = self._runtime._env.step(action)
+        self._runtime._last_action = action
+        finished = self._runtime._time_step.last()
+        # print("moving right")
+        return finished or self._runtime._error_logger.errors_found
 
 
 def launch(environment_loader, policy=None, title='Explorer', width=1024,
@@ -557,5 +576,5 @@ if __name__ == "__main__":
         action[0] = 1
         return action
 
-    viewer.launch(env, policy=random_policy)
-
+    # viewer.launch(env, policy=random_policy)
+    launch(env)
