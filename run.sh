@@ -7,9 +7,9 @@ SBATCH --export=ALL
 SBATCH -J cathsim
 # Define a standard output file. When the job is running, %N will be replaced by the name of 
 # the first node where the job runs, %j will be replaced by job id number.
-SBATCH -o cathsim_%j.out
+SBATCH -o ./logs/cathsim_%j.out
 # Define a standard error file
-SBATCH -e cathsim_%j.err
+SBATCH -e ./logs/cathsim_%j.err
 # Request the GPU partition (gpu or gpuc). We don't recommend requesting multiple partitions, as the specifications of the nodes in these partitions are different.
 SBATCH -p gpu
 # Request the number of nodes
