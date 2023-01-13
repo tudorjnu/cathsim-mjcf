@@ -2,6 +2,7 @@
 videos/
 model/
 stl2mjcf/
+checkpoints/
 stl2mjcf.py
 
 

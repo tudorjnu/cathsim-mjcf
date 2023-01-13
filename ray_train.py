@@ -10,6 +10,9 @@ from dm_control import composer
 from cathsim import Navigate, Tip, Guidewire, Phantom
 
 from algorithms import CONFIGS
+from pathlib import Path
+
+# get the current working directory
 
 
 def env_creator(env_config=None):
@@ -29,13 +32,12 @@ def env_creator(env_config=None):
     )
     env = DMEnv(
         env=env,
-        from_pixels=True,
+        from_pixels=False,
         render_kwargs=render_kwargs,
         channels_first=True,
     )
     env = TimeLimit(env, max_episode_steps=400)
     # env = FrameStack(env, 4)
-    # env = RecordVideo(env, video_folder='./videos')
     return env
 
 
@@ -59,8 +61,8 @@ for i in range(1000):
     print('\tReward:', round(result['episode_reward_mean'], 2))
     print('\tLength', result['episode_len_mean'])
 
-    # if i % 20 == 0:
-    # checkpoint_dir = algo.save()
-    # print(f"Checkpoint saved in directory {checkpoint_dir}")
+    if i % 20 == 0:
+        checkpoint_dir = algo.save((Path.cwd() / 'checkpoints').as_posix())
+        print(f"Checkpoint saved in directory {checkpoint_dir}")
 
 print("finished")
