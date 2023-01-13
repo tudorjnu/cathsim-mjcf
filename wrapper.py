@@ -66,13 +66,17 @@ class DMEnv(core.Env):
         render_kwargs=None,
         channels_first=True,
         preprocess=True,
-        time_limit: int = 1000,
-        **kwargs,
     ):
+
+        self._render_kwargs = render_kwargs
+        if render_kwargs is None:
+            render_kwargs = {}
+
+        self._height = render_kwargs.get('height', 256)
+        self._width = render_kwargs.get('width', 256)
+        self._camera_id = render_kwargs.get('camera_id', 0)
+
         self._from_pixels = from_pixels
-        self._height = height
-        self._width = width
-        self._camera_id = camera_id
         self._frame_skip = frame_skip
         self._channels_first = channels_first
         self.preprocess = preprocess
@@ -109,7 +113,8 @@ class DMEnv(core.Env):
 
         # create observation space
         if from_pixels:
-            shape = [3, height, width] if channels_first else [height, width, 3]
+            shape = [3, self._height, self._width] if channels_first else [
+                self._height, self._width, 3]
             self._observation_space = spaces.Box(
                 low=0, high=255, shape=shape, dtype=np.uint8
             )
@@ -194,22 +199,12 @@ class DMEnv(core.Env):
         height = height or self._height
         width = width or self._width
         camera_id = camera_id or self._camera_id
-        img = self._env.physics.render(height=height, width=width, camera_id=camera_id)
+        img = self._env.physics.render(
+            height=height, width=width, camera_id=camera_id)
         return img
 
-
-class MPO(DMEnv):
-    """Wrapper for the CartPole-v1 environment.
-    Adds an additional `reward` method for some model-based RL algos (e.g.
-    MB-MPO).
-    """
-
-    def __init__(self, env, **kwargs):
-        super().__init__(self, env, **kwargs)
-
     def reward(self, obs, action, obs_next):
-        reward = -1
-        return reward
+        return -1
 
 
 if __name__ == "__main__":
@@ -233,7 +228,8 @@ if __name__ == "__main__":
     )
 
     render_kwargs = {'width': 128, 'height': 128}
-    env = DMEnv(env=env, render_kwargs=render_kwargs)
+    env = DMEnv(env, from_pixels=True, render_kwargs=render_kwargs)
+    print(env.observation_space)
     done = False
     obs = env.reset()
     while not done:
