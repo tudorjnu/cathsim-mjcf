@@ -1,3 +1,4 @@
+from dm_control.viewer.gui.glfw_gui import GlfwKeyboard
 import math
 import cv2
 import numpy as np
@@ -10,10 +11,11 @@ from dm_control.composer.observation import observable
 from dm_control.suite.wrappers.pixels import Wrapper
 from dm_control.composer.observation.observable import MujocoCamera
 from dm_control import viewer
+from dm_control.viewer import user_input
 
 
-_DEFAULT_TIME_LIMIT = 50
-_CONTROL_TIMESTEP = .01
+_DEFAULT_TIME_LIMIT = 200
+_CONTROL_TIMESTEP = .004
 
 SCALE = 1
 RGBA = [0.2, 0.2, 0.2, 1]
@@ -24,13 +26,13 @@ OFFSET = SPHERE_RADIUS + CYLINDER_HEIGHT * 2
 TWIST = False
 STRETCH = False
 FORCE = 300
-STIFFNESS = 30
+STIFFNESS = 20
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
 MARGIN = 0.005
 CONDIM = 1
-FRICTION = [0.2]
+FRICTION = [0.1]
 
-NUM_SUBSTEPS = 4
+NUM_SUBSTEPS = 1
 
 TIP_N_BODIES = 3
 TIP_REF = math.pi / 2 / TIP_N_BODIES - 1
@@ -58,7 +60,7 @@ class Scene(composer.Arena):
             viscosity=0.0009 * 4,
             density=1060,
             solver='cg',         # pgs, cg, newton
-            integrator='euler',      # euler, rk4, implicit
+            integrator='implicit',      # euler, rk4, implicit
             cone='pyramidal',          # pyramidal, elliptic
             jacobian='sparse',
         )
@@ -205,7 +207,7 @@ class Guidewire(composer.Entity):
         stiffness = self._mjcf_root.default.joint.stiffness
         for n in range(1, n_bodies):
             parent = add_body(n, parent, stiffness=stiffness)
-            stiffness *= 0.99
+            # stiffness *= 0.99
 
         self._tip_site = parent.add(
             'site', name='tip_site', pos=[0, 0, OFFSET])
@@ -283,7 +285,7 @@ class Tip(composer.Entity):
         self._mjcf_root.default.joint.set_attributes(
             type='hinge',
             pos=[0, 0, -OFFSET / 2],
-            springref=math.pi / 4 / n_bodies,
+            springref=math.pi / 5 / n_bodies,
             # ref=pi / 2 / n_bodies - 1,
             damping=0.5,
             stiffness=1,
@@ -461,52 +463,37 @@ class Application(viewer.application.Application):
     def __init__(self, title, width, height):
         super().__init__(title, width, height)
 
-        self._input_map.bind(self._move_forward,  viewer.user_input.KEY_UP)
-        self._input_map.bind(self._move_back,  viewer.user_input.KEY_DOWN)
-        self._input_map.bind(self._move_left,  viewer.user_input.KEY_LEFT)
-        self._input_map.bind(self._move_right,  viewer.user_input.KEY_RIGHT)
+        self._input_map.bind(self._move_forward,  user_input.KEY_UP)
+        self._input_map.bind(self._move_back,  user_input.KEY_DOWN)
+        self._input_map.bind(self._move_left,  user_input.KEY_LEFT)
+        self._input_map.bind(self._move_right,  user_input.KEY_RIGHT)
+        self.null_action = np.zeros(2)
+
+    def perform_action(self, action):
+        self._runtime._time_step = self._runtime._env.step(action)
+        self._runtime._last_action = action
+        finished = self._runtime._time_step.last()
+        return finished or self._runtime._error_logger.errors_found
 
     def _move_forward(self):
-        action = self._environment.action_spec()
-        action = np.zeros(shape=action.shape)
+        action = self.null_action
         action[0] = 1
-        self._runtime._time_step = self._runtime._env.step(action)
-        self._runtime._last_action = action
-        finished = self._runtime._time_step.last()
-        # print("moving forward")
-        return finished or self._runtime._error_logger.errors_found
+        return self.perform_action(action)
 
     def _move_back(self):
-        action = self._environment.action_spec()
-        action = np.zeros(shape=action.shape)
+        action = self.null_action
         action[0] = -1
-        self._runtime._time_step = self._runtime._env.step(action)
-        self._runtime._last_action = action
-        finished = self._runtime._time_step.last()
-        # print("moving backward")
-        return finished or self._runtime._error_logger.errors_found
+        return self.perform_action(action)
 
     def _move_left(self):
-        action = self._environment.action_spec()
-        action = np.zeros(shape=action.shape)
+        action = self.null_action
         action[1] = -1
-        self._runtime._time_step = self._runtime._env.step(action)
-        self._runtime._last_action = action
-        finished = self._runtime._time_step.last()
-        # print("moving left")
-        return finished or self._runtime._error_logger.errors_found
+        return self.perform_action(action)
 
     def _move_right(self):
-        action = self._environment.action_spec()
-        print(action.shape)
-        action = np.zeros(shape=action.shape)
-        print(action.shape)
+        action = self.null_action
         action[1] = 1
-        self._runtime._time_step = self._runtime._env.step(action)
-        self._runtime._last_action = action
-        finished = self._runtime._time_step.last()
-        # print("moving right")
-        return finished or self._runtime._error_logger.errors_found
+        return self.perform_action(action)
 
 
 def launch(environment_loader, policy=None, title='Explorer', width=1024,
