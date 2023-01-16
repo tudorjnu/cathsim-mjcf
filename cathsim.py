@@ -28,14 +28,13 @@ STRETCH = False
 FORCE = 300
 STIFFNESS = 20
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
-MARGIN = 0.005
-CONDIM = 1
+MARGIN = 0.004
+CONDIM = 3
 FRICTION = [0.1]
 
 NUM_SUBSTEPS = 1
 
 TIP_N_BODIES = 3
-TIP_REF = math.pi / 2 / TIP_N_BODIES - 1
 
 
 random_state = np.random.RandomState(42)
@@ -56,19 +55,18 @@ class Scene(composer.Arena):
         )
         self._mjcf_root.option.set_attributes(
             timestep=_CONTROL_TIMESTEP,
-            tolerance=1e-6,
-            viscosity=0.0009 * 4,
+            viscosity=3.5,  # 0.0009 * 4,
             density=1060,
-            solver='cg',         # pgs, cg, newton
-            integrator='implicit',      # euler, rk4, implicit
+            solver='newton',         # pgs, cg, newton
+            integrator='euler',      # euler, rk4, implicit
             cone='pyramidal',          # pyramidal, elliptic
             jacobian='sparse',
         )
 
         self._mjcf_root.option.flag.set_attributes(
-            # multiccd='disable',
-            # frictionloss="disable",
-            gravity="disable",
+            multiccd='disable',
+            frictionloss="disable",
+            gravity="enable",
         )
 
         self._mjcf_root.size.set_attributes(
@@ -162,7 +160,7 @@ class Guidewire(composer.Entity):
             margin=MARGIN,
             condim=CONDIM,
             friction=FRICTION,
-            # fluidshape='ellipsoid',
+            fluidshape='ellipsoid',
         )
 
         self._mjcf_root.default.joint.set_attributes(
@@ -199,9 +197,10 @@ class Guidewire(composer.Entity):
                    stiffness=0, damping=2)
         self._mjcf_root.actuator.add(
             'velocity', joint='slider', name='slider_actuator')
-        self._mjcf_root.actuator.add('general', joint='rotator', name='rotator_actuator',
-                                     dyntype=None, gaintype='fixed', biastype='None',
-                                     dynprm=[1, 0, 0], gainprm=[40, 0, 0], biasprm=[2])
+        self._mjcf_root.actuator.add(
+            'general', joint='rotator', name='rotator_actuator',
+            dyntype=None, gaintype='fixed', biastype='None',
+            dynprm=[1, 0, 0], gainprm=[40, 0, 0], biasprm=[2])
 
         # make the main body
         stiffness = self._mjcf_root.default.joint.stiffness
@@ -277,7 +276,7 @@ class Tip(composer.Entity):
             rgba=[0., 0.2, 0, 1],
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             type="capsule",
-            margin=MARGIN,
+            # margin=MARGIN,
             condim=CONDIM,
             friction=FRICTION,
         )
@@ -399,7 +398,7 @@ class Navigate(composer.Task):
 
         for obs in self._task_observables.values():
             print('Observation:', obs)
-            obs.enabled = True
+            # obs.enabled = True
 
         self.control_timestep = NUM_SUBSTEPS * self.physics_timestep
 

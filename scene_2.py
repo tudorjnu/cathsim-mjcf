@@ -1,11 +1,9 @@
 from dm_control import mjcf
 from dm_control import composer
-import pandas as pd
 from math import pi, sin, cos, tan
 import numpy as np
 import mujoco
 import mujoco_viewer
-from pynput import keyboard
 import glfw
 import imageio
 
@@ -190,7 +188,7 @@ class Scene(object):
             model = mjcf.from_file(xml_path, model_dir='./assets')
             # adjust the imported defaults
             model.default.geom.rgba = [111 / 255, 18 / 255, 0 / 255, 0]
-            model.default.geom.margin = 0.002
+            model.default.geom.margin = 0.004
             visual = model.find('geom', 'visual')
             visual.rgba = [111 / 255, 18 / 255, 0 / 255, 0.3]
             self.model.attach(model)
@@ -230,8 +228,10 @@ class Tip(object):
         default.joint.armature = 0.05
         # actuator defaults
 
-        parent = self.model.worldbody.add('body', name='tip_0', euler=[0, 0, 0], pos=[0, 0, 0])
-        parent.add('geom', name='tip_geom_0', type='capsule', size=[sphere_radius, cylinder_height])
+        parent = self.model.worldbody.add(
+            'body', name='tip_0', euler=[0, 0, 0], pos=[0, 0, 0])
+        parent.add('geom', name='tip_geom_0', type='capsule',
+                   size=[sphere_radius, cylinder_height])
         parent.add('joint', name='T0_0', axis=[0, 0, 1])
         parent.add('joint', name='T1_0', axis=[0, 1, 0])
 
@@ -252,9 +252,11 @@ class Tip(object):
         if ref is not None:
             j1.ref = ref
         if self.twist:
-            child.add('joint', type='hinge', name=f'JT_{self.n}', axis=[0, 0, 1])
+            child.add('joint', type='hinge',
+                      name=f'JT_{self.n}', axis=[0, 0, 1])
         if self.stretch:
-            child.add('joint', type='slide', name=f'JS_{self.n}', axis=[0, 0, 1])
+            child.add('joint', type='slide',
+                      name=f'JS_{self.n}', axis=[0, 0, 1])
 
         self.n += 1
 
@@ -340,9 +342,12 @@ class Guidewire(composer.Entity):
                                           euler=[-pi / 2, 0, pi],
                                           )
         parent.add('geom', name='geom_0')
-        parent.add('joint', type='slide', name='slider', axis=[0, 0, 1], range=[-0, 0.2])
-        parent.add('joint', type='hinge', name='rotator', axis=[0, 0, 1], stiffness=0, damping=2)
-        self.model.actuator.add('velocity', joint='slider', name='slider_actuator')
+        parent.add('joint', type='slide', name='slider',
+                   axis=[0, 0, 1], range=[-0, 0.2])
+        parent.add('joint', type='hinge', name='rotator',
+                   axis=[0, 0, 1], stiffness=0, damping=2)
+        self.model.actuator.add(
+            'velocity', joint='slider', name='slider_actuator')
         self.model.actuator.add(
             'general',
             joint='rotator',
@@ -361,8 +366,8 @@ class Guidewire(composer.Entity):
 
         site = parent.add('site', name='test', pos=[0, 0, offset])
 
-        # tip = Tip(diameter=diameter, n_bodies=tip_n_bodies)
-        # site.attach(tip.model)
+        tip = Tip(diameter=diameter, n_bodies=tip_n_bodies)
+        site.attach(tip.model)
 
     @property
     def mjcf_model(self):
@@ -407,7 +412,8 @@ class Catheter(object):
         default.velocity.kv = 10
 
         worldbody = self.mjcf_model.worldbody
-        parent = worldbody.add('body', name='geom_0', pos=[0, -length, 0], euler=[-pi / 2, 0, pi],)
+        parent = worldbody.add('body', name='geom_0', pos=[
+                               0, -length, 0], euler=[-pi / 2, 0, pi],)
         self._create_body_geom(parent, 12)
         parent.add('joint', type='slide', name='catheter_slider', axis=[0, 0, 1],
                    damping=0.005, limited=True, range=[-0, 0.2])
@@ -416,7 +422,8 @@ class Catheter(object):
         # self.mjcf_model.actuator.add('velocity', joint='rotator')
 
         for i in range(n_bodies - 1):
-            parent = self.add_body(parent, offset=offset * 2, ref=0, stiffness=0.5)
+            parent = self.add_body(
+                parent, offset=offset * 2, ref=0, stiffness=0.5)
 
     @staticmethod
     def _create_body_geom(body, n_bodies, radius=0.001, thickness=0.0002, depth=0.002):
@@ -433,8 +440,10 @@ class Catheter(object):
         child_name = f'geom{self.n}'
         child = parent.add('body', name=child_name, pos=[0, 0, offset])
         self._create_body_geom(child, 12)
-        child.add('joint', name=f'J0_{self.n}', axis=[1, 0, 0], stiffness=stiffness)
-        j1 = child.add('joint', name=f'J1_{self.n}', axis=[0, 1, 0], stiffness=stiffness)
+        child.add('joint', name=f'J0_{self.n}', axis=[
+                  1, 0, 0], stiffness=stiffness)
+        j1 = child.add('joint', name=f'J1_{self.n}', axis=[
+                       0, 1, 0], stiffness=stiffness)
         if ref is not None:
             j1.ref = ref
         self.n += 1
@@ -450,65 +459,16 @@ def get_forces(model, data):
         forces.append(force)
     return forces
 
-class Scene(composer.Arena):
-
-    def _build(self, name):
-        super()._build(name=name)
-
-        self._mjcf_root.compiler.set_attributes(
-            angle='radian',
-            meshdir='./meshes',
-            autolimits=True,
-        )
-        self._mjcf_root.option.set_attributes(
-            tolerance=0,
-            timestep=0.002,
-            viscosity=3.5,
-            density=997,
-            solver='Newton',         # pgs, cg, newton
-            integrator='Euler',      # euler, rk4, implicit
-            cone='pyramidal',          # pyramidal, elliptic
-            jacobian='sparse',
-        )
-
-        self._mjcf_root.option.flag.set_attributes(
-            multiccd='disable',
-            frictionloss="disable",
-            gravity="enable",
-        )
-
-        self._mjcf_root.size.set_attributes(
-            njmax=2000,
-            nconmax=1000,
-        )
-
-        self._top_camera = self._mjcf_root.worldbody.add(
-            'camera',
-            name='top_camera',
-            pos=[0, 0, 0.01],
-            quat=[1, 0, 0, 0],)
-
-        self._mjcf_root.asset.add('texture', type="skybox", builtin="gradient",
-                                  rgb1=[1, 1, 1], rgb2=[1, 1, 1],
-                                  width=256, height=256)
-        self._mjcf_root.worldbody.add('light', pos=[0, 0, 10], dir=[20, 20, -20],
-                                      castshadow=False)
-
-    def regenerate(self, random_state):
-        pass
 
 if __name__ == '__main__':
-    scene = Scene('arena')
-    print(scene._mjcf_root.to_xml_string())
+    scene = Scene('./assets/phantom3.xml')
 
     guidewire = Guidewire()
-    print('DEFAULTS', guidewire.model.default.to_xml_string(), sep="\n")
-    __import__('pprint').pprint(guidewire.model.find_all('joint')[:10])
-    scene._mjcf_root.attach(guidewire.model)
+    scene.model.attach(guidewire.model)
 
     mj_model = scene
-    mj_model_string = mj_model._mjcf_root.to_xml_string()
-    assets = mj_model._mjcf_root.get_assets()
+    mj_model_string = mj_model.model.to_xml_string()
+    assets = mj_model.model.get_assets()
     model = mujoco.MjModel.from_xml_string(mj_model_string, assets=assets)
     data = mujoco.MjData(model)
     viewer = MujocoViewer(model, data)
@@ -518,7 +478,7 @@ if __name__ == '__main__':
         if viewer.is_alive:
             # Collect events until released
             mujoco.mj_step(model, data)
-            data.ctrl[:] = [0.2, 0]
+            # data.ctrl[:] = [0.2, 0]
             viewer.render()
 
     # close
