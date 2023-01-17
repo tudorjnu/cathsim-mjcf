@@ -1,7 +1,7 @@
 # Folders
 videos/
 model/
-stl2mjcf/
+stl2mjcf/*
 checkpoints/
 stl2mjcf.py
 
