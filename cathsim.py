@@ -1,8 +1,8 @@
-from dm_control.viewer.gui.glfw_gui import GlfwKeyboard
 import math
 import cv2
 import numpy as np
 
+import mujoco
 from dm_control import mjcf
 from dm_control import composer
 from dm_control.composer import variation
@@ -25,14 +25,16 @@ CYLINDER_HEIGHT = SPHERE_RADIUS * 1.5
 OFFSET = SPHERE_RADIUS + CYLINDER_HEIGHT * 2
 TWIST = False
 STRETCH = False
-FORCE = 300
-STIFFNESS = 20
+FORCE = 300 * SCALE
+STIFFNESS = 30
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
 MARGIN = 0.004
 CONDIM = 3
-FRICTION = [0.1]
+FRICTION = [0.1]  # default: [1, 0.005, 0.0001]
+SPRING = 0.05
+DAMPER = 0.05
 
-NUM_SUBSTEPS = 1
+NUM_SUBSTEPS = 4
 
 TIP_N_BODIES = 3
 
@@ -57,21 +59,22 @@ class Scene(composer.Arena):
             timestep=_CONTROL_TIMESTEP,
             viscosity=3.5,  # 0.0009 * 4,
             density=1060,
-            solver='newton',         # pgs, cg, newton
-            integrator='euler',      # euler, rk4, implicit
+            solver='cg',         # pgs, cg, newton
+            integrator='implicit',      # euler, rk4, implicit
             cone='pyramidal',          # pyramidal, elliptic
             jacobian='sparse',
         )
 
         self._mjcf_root.option.flag.set_attributes(
             multiccd='disable',
-            frictionloss="disable",
+            frictionloss="enable",
             gravity="enable",
         )
 
         self._mjcf_root.size.set_attributes(
-            njmax=2000,
-            nconmax=2000,
+            nconmax=6000,
+            njmax=6000,
+            nstack=50000000,
         )
 
         self._mjcf_root.default.site.set_attributes(
@@ -87,13 +90,14 @@ class Scene(composer.Arena):
             euler=[0, 0, 0],
         )
 
-        self._mjcf_root.asset.add('texture', type="skybox", builtin="gradient",
-                                  rgb1=[1, 1, 1], rgb2=[1, 1, 1],
-                                  width=256, height=256)
-        self._mjcf_root.worldbody.add('light', pos=[0, 0, 10], dir=[20, 20, -20],
-                                      castshadow=False)
+        self._mjcf_root.asset.add(
+            'texture', type="skybox", builtin="gradient", rgb1=[1, 1, 1],
+            rgb2=[1, 1, 1], width=256, height=256)
+        self._mjcf_root.worldbody.add(
+            'light', pos=[0, 0, 10], dir=[20, 20, -20], castshadow=False)
 
         site = self._mjcf_root.worldbody.add('site', pos=TARGET_POS)
+
         if render_site:
             site.rgba = self._mjcf_root.default.site.rgba
             site.rgba[-1] = 1
@@ -167,9 +171,10 @@ class Guidewire(composer.Entity):
             type='hinge',
             pos=[0, 0, -OFFSET / 2],
             ref=0,
-            damping=0.005,
+            # damping=0.005,
             stiffness=STIFFNESS,
             springref=0,
+            # springdamper=[SPRING, DAMPER],
             armature=0.05,
             axis=[0, 0, 1],
         )
@@ -186,11 +191,17 @@ class Guidewire(composer.Entity):
             kv=10,
         )
 
-        parent = self._mjcf_root.worldbody.add('body',
-                                               name='body_0',
-                                               euler=[-math.pi /
-                                                      2, 0, math.pi],
-                                               )
+        parent = self._mjcf_root.worldbody.add(
+            'body',
+            name='body_0',
+            euler=[
+                -math.pi /
+                2, 0, math.pi
+            ],
+            pos=[
+                0, -(self._length - 0.015), 0
+            ]
+        )
         parent.add('geom', name='geom_0')
         parent.add('joint', type='slide', name='slider', range=[-0, 0.2])
         parent.add('joint', type='hinge', name='rotator',
@@ -206,8 +217,8 @@ class Guidewire(composer.Entity):
         stiffness = self._mjcf_root.default.joint.stiffness
         for n in range(1, n_bodies):
             parent = add_body(n, parent, stiffness=stiffness)
-            # stiffness *= 0.99
-
+            stiffness *= 0.995
+        print('stiffness', stiffness)
         self._tip_site = parent.add(
             'site', name='tip_site', pos=[0, 0, OFFSET])
 
@@ -255,6 +266,8 @@ class Phantom(composer.Entity):
             condim=CONDIM,
             friction=FRICTION,
         )
+        self._mjcf_root.default.mesh.set_attributes(
+            scale=[SCALE for i in range(3)])
         self._rgba[-1] = 0.3
         self._mjcf_root.find('geom', 'visual').rgba = self._rgba
 
@@ -273,19 +286,20 @@ class Tip(composer.Entity):
 
         self._mjcf_root.default.geom.set_attributes(
             group=2,
-            rgba=[0., 0.2, 0, 1],
+            rgba=[0.1, 0.1, 0.1, 1],
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             type="capsule",
-            # margin=MARGIN,
+            margin=MARGIN,
             condim=CONDIM,
             friction=FRICTION,
+            fluidshape='ellipsoid',
         )
 
         self._mjcf_root.default.joint.set_attributes(
             type='hinge',
             pos=[0, 0, -OFFSET / 2],
-            springref=math.pi / 5 / n_bodies,
-            # ref=pi / 2 / n_bodies - 1,
+            springref=math.pi / 3 / n_bodies,
+            # ref=math.pi / 5 / n_bodies ,
             damping=0.5,
             stiffness=1,
             armature=0.05,
@@ -366,8 +380,6 @@ class Navigate(composer.Task):
             self._arena.attach(self._guidewire)
 
         # Configure initial poses
-        self._guidewire_initial_pose = [
-            0, -(self._guidewire._length - 0.015), 0]
         self._target_pos = TARGET_POS
 
         # Configure variators
@@ -528,6 +540,17 @@ if __name__ == "__main__":
         tip=tip,
         use_image=True
     )
+    model_string = task._arena._mjcf_root.to_xml_string(precision=3)
+    model_assets = task._arena._mjcf_root.get_assets()
+    model = mujoco.MjModel.from_xml_string(model_string, model_assets)
+    from mujoco import viewer
+    mujoco.viewer.launch(model)
+
+    # task._arena._mjcf_root.
+    # with open("model.xml", "w") as text_file:
+    #     text_file.write(model_string)
+    exit()
+
     env = composer.Environment(
         task=task,
         time_limit=_DEFAULT_TIME_LIMIT,
