@@ -16,6 +16,8 @@ from dm_control.viewer import user_input
 
 _DEFAULT_TIME_LIMIT = 200
 _CONTROL_TIMESTEP = .004
+NUM_SUBSTEPS = 4
+
 
 SCALE = 1
 RGBA = [0.2, 0.2, 0.2, 1]
@@ -28,15 +30,24 @@ STRETCH = False
 FORCE = 300 * SCALE
 STIFFNESS = 30
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
-MARGIN = 0.004
 CONDIM = 3
 FRICTION = [0.1]  # default: [1, 0.005, 0.0001]
 SPRING = 0.05
 DAMPER = 0.05
 
-NUM_SUBSTEPS = 4
 
-TIP_N_BODIES = 3
+TIP_N_BODIES = 2
+
+# OPTIONS
+_GRAVITY = [0, 0, -9.81]
+_DENSITY = 1000
+_VISCOSITY = 0.0009
+_MARGIN = 0.005
+_INTEGRATOR = 'implicit'  # euler, implicit, rk4
+_CONE = 'pyramidal'  # pyramidal, elliptic
+_JACOBIAN = 'sparse'  # dense, sparse
+_SOLVER = 'newton'  # cg, newton, pgs
+# FLAGS =
 
 
 random_state = np.random.RandomState(42)
@@ -57,12 +68,12 @@ class Scene(composer.Arena):
         )
         self._mjcf_root.option.set_attributes(
             timestep=_CONTROL_TIMESTEP,
-            viscosity=3.5,  # 0.0009 * 4,
-            density=1060,
-            solver='cg',         # pgs, cg, newton
-            integrator='implicit',      # euler, rk4, implicit
-            cone='pyramidal',          # pyramidal, elliptic
-            jacobian='sparse',
+            viscosity=_VISCOSITY,  # 0.0009 * 4,
+            density=_DENSITY,
+            solver=_SOLVER,         # pgs, cg, newton
+            integrator=_INTEGRATOR,  # euler, implicit, rk4
+            cone=_CONE,          # pyramidal, elliptic
+            jacobian=_JACOBIAN,    # dense, sparse
         )
 
         self._mjcf_root.option.flag.set_attributes(
@@ -147,6 +158,27 @@ def add_body(
     return child
 
 
+class Phantom(composer.Entity):
+    def _build(self, xml_path, **kwargs):
+        self._rgba = [111 / 255, 18 / 255, 0 / 255, 1]
+        self._mjcf_root = mjcf.from_file(xml_path, **kwargs)
+        self._mjcf_root.default.geom.set_attributes(
+            margin=_MARGIN,
+            group=0,
+            rgba=self._rgba,
+            condim=CONDIM,
+            friction=FRICTION,
+        )
+        self._mjcf_root.default.mesh.set_attributes(
+            scale=[SCALE for i in range(3)])
+        self._rgba[-1] = 0.3
+        self._mjcf_root.find('geom', 'visual').rgba = self._rgba
+
+    @property
+    def mjcf_model(self):
+        return self._mjcf_root
+
+
 class Guidewire(composer.Entity):
 
     def _build(self, n_bodies: int = 80):
@@ -156,12 +188,12 @@ class Guidewire(composer.Entity):
         self._mjcf_root = mjcf.RootElement(model="guidewire")
 
         self._mjcf_root.default.geom.set_attributes(
+            margin=_MARGIN,
             group=1,
             rgba=[0.1, 0.1, 0.1, 1],
             type='capsule',
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             density=7980,
-            margin=MARGIN,
             condim=CONDIM,
             friction=FRICTION,
             fluidshape='ellipsoid',
@@ -255,27 +287,6 @@ class GuidewireObservables(composer.Observables):
         return observable.MJCFFeature('qvel', all_joints)
 
 
-class Phantom(composer.Entity):
-    def _build(self, xml_path, **kwargs):
-        self._rgba = [111 / 255, 18 / 255, 0 / 255, 0]
-        self._mjcf_root = mjcf.from_file(xml_path, **kwargs)
-        self._mjcf_root.default.geom.set_attributes(
-            group=0,
-            rgba=self._rgba,
-            margin=MARGIN,
-            condim=CONDIM,
-            friction=FRICTION,
-        )
-        self._mjcf_root.default.mesh.set_attributes(
-            scale=[SCALE for i in range(3)])
-        self._rgba[-1] = 0.3
-        self._mjcf_root.find('geom', 'visual').rgba = self._rgba
-
-    @property
-    def mjcf_model(self):
-        return self._mjcf_root
-
-
 class Tip(composer.Entity):
 
     def _build(self, name=None, n_bodies=3):
@@ -285,11 +296,11 @@ class Tip(composer.Entity):
         self._mjcf_root = mjcf.RootElement(model=name)
 
         self._mjcf_root.default.geom.set_attributes(
+            margin=_MARGIN,
             group=2,
             rgba=[0.1, 0.1, 0.1, 1],
             size=[SPHERE_RADIUS, CYLINDER_HEIGHT],
             type="capsule",
-            margin=MARGIN,
             condim=CONDIM,
             friction=FRICTION,
             fluidshape='ellipsoid',
@@ -380,6 +391,7 @@ class Navigate(composer.Task):
             self._arena.attach(self._guidewire)
 
         # Configure initial poses
+        self._guidewire_initial_pose = [0, 0, 0]
         self._target_pos = TARGET_POS
 
         # Configure variators
@@ -543,13 +555,13 @@ if __name__ == "__main__":
     model_string = task._arena._mjcf_root.to_xml_string(precision=3)
     model_assets = task._arena._mjcf_root.get_assets()
     model = mujoco.MjModel.from_xml_string(model_string, model_assets)
-    from mujoco import viewer
-    mujoco.viewer.launch(model)
-
-    # task._arena._mjcf_root.
+    # from mujoco import viewer
+    # mujoco.viewer.launch(model)
+    #
+    # task._arena._mjcf_root.to_xml_string(precision=3)
     # with open("model.xml", "w") as text_file:
     #     text_file.write(model_string)
-    exit()
+    # exit()
 
     env = composer.Environment(
         task=task,

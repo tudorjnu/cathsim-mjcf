@@ -229,7 +229,7 @@ class ActionDiscretizer(gym.ActionWrapper):
         return action
 
 
-class MBPOWrapper(Wrapper):
+class MBPOWrapper(gym.Wrapper):
     """Wrapper for the CartPole-v1 environment.
     Adds an additional `reward` method for some model-based RL algos (e.g.
     MB-MPO).
@@ -237,6 +237,9 @@ class MBPOWrapper(Wrapper):
 
     def __init__(self, env):
         super().__init__(env)
+
+    def reward(self, obs, action, obs_next):
+        return -1
 
 
 if __name__ == "__main__":

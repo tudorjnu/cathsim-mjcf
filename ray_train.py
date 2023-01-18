@@ -3,7 +3,7 @@ import numpy as np
 from ray.tune.registry import register_env
 from ray.rllib.utils import check_env
 
-from wrapper import DMEnv
+from wrapper import DMEnv, MBPOWrapper
 from gymnasium.wrappers import TimeLimit, FrameStack, RecordVideo, GrayScaleObservation
 
 from dm_control import composer
@@ -36,6 +36,7 @@ def env_creator(env_config=None):
         render_kwargs=render_kwargs,
         channels_first=True,
     )
+    env = MBPOWrapper(env)
     env = TimeLimit(env, max_episode_steps=400)
     # env = FrameStack(env, 4)
     return env
@@ -47,7 +48,7 @@ def env_creator(env_config=None):
 register_env("cathsim", env_creator)
 
 algo = (
-    CONFIGS["Dreamer"]()
+    CONFIGS["MBMPO"]()
     .environment(env="cathsim")
     .resources(num_gpus=1)
     .framework("torch")
