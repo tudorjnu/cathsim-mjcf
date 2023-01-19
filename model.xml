@@ -1,6 +1,6 @@
 <mujoco model="arena">
-  <compiler meshdir="./assets/meshes/" autolimits="true" boundmass="1e-05" boundinertia="1e-11" coordinate="local" angle="radian" eulerseq="xyz"/>
-  <option timestep="0.004" density="1.06e+03" viscosity="3.5" integrator="implicit" cone="pyramidal" jacobian="sparse" solver="CG" noslip_iterations="5" noslip_tolerance="0">
+  <compiler autolimits="true" boundmass="1e-05" boundinertia="1e-11" coordinate="local" angle="radian" eulerseq="xyz"/>
+  <option timestep="0.004" density="1e+03" viscosity="0.0009" o_margin="0.004" integrator="implicit" cone="pyramidal" jacobian="sparse" solver="CG" noslip_iterations="5" noslip_tolerance="0">
     <flag frictionloss="enable" gravity="enable" multiccd="disable"/>
   </option>
   <size njmax="6000" nconmax="6000" nstack="50000000"/>
@@ -15,17 +15,17 @@
     </default>
     <default class="phantom3/">
       <mesh scale="1 1 1"/>
-      <geom condim="1" group="0" rgba="0.435 0.0706 0 0" friction="0.1" margin="0.004"/>
+      <geom condim="3" group="0" rgba="0.435 0.0706 0 0" friction="0.1" margin="0.004"/>
     </default>
     <default class="guidewire/">
       <joint type="hinge" pos="0 0 -0.001" axis="0 0 1" stiffness="30" ref="0" springref="0" armature="0.05"/>
-      <geom type="capsule" condim="1" group="1" size="0.0005 0.00075" rgba="0.1 0.1 0.1 1" friction="0.1" density="7.98e+03" margin="0.004" fluidshape="ellipsoid"/>
+      <geom type="capsule" condim="3" group="1" size="0.0005 0.00075" rgba="0.1 0.1 0.1 1" friction="0.1" density="7.98e+03" margin="0.004" fluidshape="ellipsoid"/>
       <site type="sphere" rgba="0.3 0 0 0" size="0.0005"/>
       <velocity ctrlrange="-1 1" forcerange="-300 300" kv="10"/>
     </default>
     <default class="guidewire/tip/">
       <joint type="hinge" pos="0 0 -0.001" stiffness="1" springref="0.262" armature="0.05" damping="0.5"/>
-      <geom type="capsule" condim="1" group="2" size="0.0005 0.00075" rgba="0.1 0.1 0.1 1" friction="0.1" margin="0.004" fluidshape="ellipsoid"/>
+      <geom type="capsule" condim="3" group="2" size="0.0005 0.00075" rgba="0.1 0.1 0.1 1" friction="0.1" margin="0.004" fluidshape="ellipsoid"/>
     </default>
   </default>
   <asset>
@@ -2090,7 +2090,7 @@
       </body>
     </body>
     <body name="guidewire/">
-      <body name="guidewire/body_0" euler="-1.57 0 3.14">
+      <body name="guidewire/body_0" pos="0 -0.148 0" euler="-1.57 0 3.14">
         <geom name="guidewire/geom_0" class="guidewire/"/>
         <joint name="guidewire/slider" class="guidewire/" type="slide" range="0 0.2"/>
         <joint name="guidewire/rotator" class="guidewire/" type="hinge" stiffness="0" damping="2"/>

@@ -1,6 +1,7 @@
 import math
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
 
 import mujoco
 from dm_control import mjcf
@@ -16,7 +17,7 @@ from dm_control.viewer import user_input
 
 _DEFAULT_TIME_LIMIT = 200
 _CONTROL_TIMESTEP = .004
-NUM_SUBSTEPS = 4
+_NUM_SUBSTEPS = 3
 
 
 SCALE = 1
@@ -28,12 +29,11 @@ OFFSET = SPHERE_RADIUS + CYLINDER_HEIGHT * 2
 TWIST = False
 STRETCH = False
 FORCE = 300 * SCALE
-STIFFNESS = 30
+STIFFNESS = 40
 TARGET_POS = (-0.043094, 0.14015, 0.033013)
 CONDIM = 3
 FRICTION = [0.1]  # default: [1, 0.005, 0.0001]
 SPRING = 0.05
-DAMPER = 0.05
 
 
 TIP_N_BODIES = 2
@@ -41,14 +41,16 @@ TIP_N_BODIES = 2
 # OPTIONS
 _GRAVITY = [0, 0, -9.81]
 _DENSITY = 1000
-_VISCOSITY = 0.0009
-_MARGIN = 0.005
+_VISCOSITY = 0.0009 * 4
+_MARGIN = 0.004
 _INTEGRATOR = 'implicit'  # euler, implicit, rk4
 _CONE = 'pyramidal'  # pyramidal, elliptic
 _JACOBIAN = 'sparse'  # dense, sparse
 _SOLVER = 'newton'  # cg, newton, pgs
-# FLAGS =
-
+# FLAGS
+_MULTICCD = 'disable'
+_FRICTIONLOSS = "enable"
+_GRAVITY = "enable"
 
 random_state = np.random.RandomState(42)
 
@@ -77,9 +79,9 @@ class Scene(composer.Arena):
         )
 
         self._mjcf_root.option.flag.set_attributes(
-            multiccd='disable',
-            frictionloss="enable",
-            gravity="enable",
+            multiccd=_MULTICCD,
+            frictionloss=_FRICTIONLOSS,
+            gravity=_GRAVITY,
         )
 
         self._mjcf_root.size.set_attributes(
@@ -160,7 +162,7 @@ def add_body(
 
 class Phantom(composer.Entity):
     def _build(self, xml_path, **kwargs):
-        self._rgba = [111 / 255, 18 / 255, 0 / 255, 1]
+        self._rgba = [111 / 255, 18 / 255, 0 / 255, 0]
         self._mjcf_root = mjcf.from_file(xml_path, **kwargs)
         self._mjcf_root.default.geom.set_attributes(
             margin=_MARGIN,
@@ -206,7 +208,6 @@ class Guidewire(composer.Entity):
             # damping=0.005,
             stiffness=STIFFNESS,
             springref=0,
-            # springdamper=[SPRING, DAMPER],
             armature=0.05,
             axis=[0, 0, 1],
         )
@@ -235,7 +236,8 @@ class Guidewire(composer.Entity):
             ]
         )
         parent.add('geom', name='geom_0')
-        parent.add('joint', type='slide', name='slider', range=[-0, 0.2])
+        parent.add('joint', type='slide', name='slider', range=[-0, 0.2],
+                   stiffness=0, damping=2)
         parent.add('joint', type='hinge', name='rotator',
                    stiffness=0, damping=2)
         self._mjcf_root.actuator.add(
@@ -372,6 +374,7 @@ class Navigate(composer.Task):
                  dense_reward: bool = True,
                  success_reward: float = 10.0,
                  use_image: bool = False,
+                 image_size: int = 480,
                  ):
 
         self.delta = delta
@@ -416,15 +419,15 @@ class Navigate(composer.Task):
         if self.use_image:
             self._task_observables['top_camera'] = CameraObservable(
                 camera_name='top_camera',
-                width=128,
-                height=128,
+                width=image_size,
+                height=image_size,
             )
 
         for obs in self._task_observables.values():
             print('Observation:', obs)
-            # obs.enabled = True
+            obs.enabled = True
 
-        self.control_timestep = NUM_SUBSTEPS * self.physics_timestep
+        self.control_timestep = _NUM_SUBSTEPS * self.physics_timestep
 
         self.success = False
 
@@ -491,10 +494,21 @@ class Application(viewer.application.Application):
         self._input_map.bind(self._move_left,  user_input.KEY_LEFT)
         self._input_map.bind(self._move_right,  user_input.KEY_RIGHT)
         self.null_action = np.zeros(2)
+        self._step = 0
 
     def perform_action(self, action):
+        global observations
         self._runtime._time_step = self._runtime._env.step(action)
         self._runtime._last_action = action
+        time_step = self._runtime._time_step
+        for key, value in time_step.observation.items():
+            if key != 'top_camera':
+                observations.setdefault(key, []).append(value)
+            else:
+                plt.imsave('./data/images/{}.png'.format(self._step), value)
+        self._step += 1
+        observations.setdefault('action', []).append(action)
+
         finished = self._runtime._time_step.last()
         return finished or self._runtime._error_logger.errors_found
 
@@ -543,7 +557,7 @@ def launch(environment_loader, policy=None, title='Explorer', width=1024,
 if __name__ == "__main__":
     from dm_control import viewer
 
-    phantom = Phantom("assets/phantom3.xml", model_dir="./assets")
+    phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
     tip = Tip(n_bodies=4)
     guidewire = Guidewire(n_bodies=80)
     task = Navigate(
@@ -552,16 +566,6 @@ if __name__ == "__main__":
         tip=tip,
         use_image=True
     )
-    model_string = task._arena._mjcf_root.to_xml_string(precision=3)
-    model_assets = task._arena._mjcf_root.get_assets()
-    model = mujoco.MjModel.from_xml_string(model_string, model_assets)
-    # from mujoco import viewer
-    # mujoco.viewer.launch(model)
-    #
-    # task._arena._mjcf_root.to_xml_string(precision=3)
-    # with open("model.xml", "w") as text_file:
-    #     text_file.write(model_string)
-    # exit()
 
     env = composer.Environment(
         task=task,
@@ -570,16 +574,16 @@ if __name__ == "__main__":
         strip_singleton_obs_buffer_dim=True,
     )
 
-    env = Wrapper(
-        env,
-        render_kwargs={
-            'height': 256,
-            'width': 256,
-            'camera_id': 0,
-            'segmentation': False,
-            'scene_option': None
-        },
-    )
+    # env = Wrapper(
+    #     env,
+    #     render_kwargs={
+    #         'height': 256,
+    #         'width': 256,
+    #         'camera_id': 0,
+    #         'segmentation': False,
+    #         'scene_option': None
+    #     },
+    # )
 
     action_spec = env.action_spec()
     print(action_spec)
@@ -596,6 +600,9 @@ if __name__ == "__main__":
                                    size=action_spec.shape)
         action[0] = 1
         return action
-
-    # viewer.launch(env, policy=random_policy)
+    observations = {}
     launch(env)
+    for key, value in observations.items():
+        print(key, len(value))
+    # save the observations as npz compressed file
+    np.savez_compressed('./data/observations.npz', **observations)

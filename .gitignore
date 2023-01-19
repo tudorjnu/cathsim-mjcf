@@ -4,6 +4,7 @@ model/
 stl2mjcf/*
 checkpoints/
 stl2mjcf.py
+data/
 
 
 # Byte-compiled / optimized / DLL files
