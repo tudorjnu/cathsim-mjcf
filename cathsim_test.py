@@ -502,15 +502,15 @@ class Application(viewer.application.Application):
             self._tracked_simulation_time += step_duration
         return finished
 
-    def perform_action(self, action):
+    def perform_action(self):
         global observations
-        finished = True
         if self._step == 0:
             self._episode += 1
             print('Episode:', self._episode)
-        time_step = self._runtime._env.step(action)
-        self._runtime._time_step = time_step
-        self._runtime._last_action = action
+
+        time_step = self._runtime._time_step
+        self._advance_simulation()
+        action = self._runtime._last_action
 
         for key, value in time_step.observation.items():
             if key != 'top_camera':
@@ -519,36 +519,25 @@ class Application(viewer.application.Application):
                 plt.imsave('./data/images/{}.png'.format(self._step), value)
         self._step += 1
         observations.setdefault('action', []).append(action)
-
-        finished = time_step.last()
-        if finished:
-            self._runtime.restart()
-        print(finished)
-        return finished or self._runtime._error_logger.errors_found
+        if time_step.last():
+            self._step = 0
+            self._restart_runtime()
 
     def _move_forward(self):
-        action = self.null_action
-        action[0] = 1
         self._runtime._default_action = [1, 0]
-        self._advance_simulation()
-        print(self._runtime._time_step.step_type)
-
-        # return self.perform_action(action)
+        self.perform_action()
 
     def _move_back(self):
-        action = self.null_action
-        action[0] = -1
-        return self.perform_action(action)
+        self._runtime._default_action = [-1, 0]
+        self._advance_simulation()
 
     def _move_left(self):
-        action = self.null_action
-        action[1] = -1
-        return self.perform_action(action)
+        self._runtime._default_action = [0, -1]
+        self._advance_simulation()
 
     def _move_right(self):
-        action = self.null_action
-        action[1] = 1
-        return self.perform_action(action)
+        self._runtime._default_action = [0, 1]
+        self._advance_simulation()
 
 
 def launch(environment_loader, policy=None, title='Explorer', width=1024,
@@ -587,7 +576,7 @@ if __name__ == "__main__":
 
     env = composer.Environment(
         task=task,
-        time_limit=_DEFAULT_TIME_LIMIT,
+        time_limit=0.5,
         random_state=np.random.RandomState(42),
         strip_singleton_obs_buffer_dim=True,
     )
@@ -616,10 +605,12 @@ if __name__ == "__main__":
                                    size=action_spec.shape)
         action[0] = 1
         return action
-
     observations = {}
-    launch(env, policy=random_policy)
-    for key, value in observations.items():
-        print(key, len(value))
-    # save the observations as npz compressed file
-    np.savez_compressed('./data/observations.npz', **observations)
+    launch(env)
+    exit()
+    i = 0
+    while not time_step.last():
+        time_step = env.step(random_policy(time_step))
+        print(time_step.last(), env.physics.time())
+        print("Step", i)
+        i += 1
