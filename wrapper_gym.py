@@ -63,24 +63,29 @@ class DMEnv(core.Env):
 
     def __init__(
         self,
-        task_kwargs=None,
+        env,
+        env_kwargs=None,
         visualize_reward=False,
         from_pixels=False,
-        height=64,
-        width=64,
+        height=256,
+        width=256,
         camera_id=0,
         frame_skip=4,
         environment_kwargs=None,
         render_kwargs=None,
         channels_first=True,
         preprocess=True,
-        time_limit: int = 1000,
-        **kwargs,
     ):
+
+        self._render_kwargs = render_kwargs
+        if render_kwargs is None:
+            render_kwargs = {}
+
+        self._height = render_kwargs.get('height', 256)
+        self._width = render_kwargs.get('width', 256)
+        self._camera_id = render_kwargs.get('camera_id', 0)
+
         self._from_pixels = from_pixels
-        self._height = height
-        self._width = width
-        self._camera_id = camera_id
         self._frame_skip = frame_skip
         self._channels_first = channels_first
         self.preprocess = preprocess
@@ -103,24 +108,8 @@ class DMEnv(core.Env):
                 )
             )
 
-        # create task
-        phantom = Phantom("assets/phantom3.xml", model_dir="./assets")
-        tip = Tip(n_bodies=4)
-        guidewire = Guidewire(n_bodies=80)
-        task = Navigate(
-            phantom=phantom,
-            guidewire=guidewire,
-            tip=tip,
-            use_image=kwargs.get('use_image', False),
-        )
-
         # MDP creation
-        self._env = composer.Environment(
-            task=task,
-            time_limit=time_limit,
-            random_state=np.random.RandomState(42),
-            strip_singleton_obs_buffer_dim=True,
-        )
+        self._env = env
         if from_pixels:
             self._env = Wrapper(self._env, render_kwargs=render_kwargs)
             print('Wrapped Env')
@@ -133,7 +122,8 @@ class DMEnv(core.Env):
 
         # create observation space
         if from_pixels:
-            shape = [3, height, width] if channels_first else [height, width, 3]
+            shape = [3, height, width] if channels_first else [
+                height, width, 3]
             self._observation_space = spaces.Box(
                 low=0, high=255, shape=shape, dtype=np.uint8
             )
@@ -217,7 +207,8 @@ class DMEnv(core.Env):
         height = height or self._height
         width = width or self._width
         camera_id = camera_id or self._camera_id
-        img = self._env.physics.render(height=height, width=width, camera_id=camera_id)
+        img = self._env.physics.render(
+            height=height, width=width, camera_id=camera_id)
         return img
 
 

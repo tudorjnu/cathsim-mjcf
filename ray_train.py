@@ -17,7 +17,7 @@ from pathlib import Path
 
 def env_creator(env_config=None):
     render_kwargs = {'width': 64, 'height': 64}
-    phantom = Phantom("assets/phantom3.xml", model_dir="./assets")
+    phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
     tip = Tip(n_bodies=4)
     guidewire = Guidewire(n_bodies=80)
     task = Navigate(
@@ -36,8 +36,7 @@ def env_creator(env_config=None):
         render_kwargs=render_kwargs,
         channels_first=True,
     )
-    env = MBPOWrapper(env)
-    env = TimeLimit(env, max_episode_steps=400)
+    env = TimeLimit(env, max_episode_steps=200)
     # env = FrameStack(env, 4)
     return env
 
@@ -48,7 +47,7 @@ def env_creator(env_config=None):
 register_env("cathsim", env_creator)
 
 algo = (
-    CONFIGS["MBMPO"]()
+    CONFIGS["PPO"]()
     .environment(env="cathsim")
     .resources(num_gpus=1)
     .framework("torch")
