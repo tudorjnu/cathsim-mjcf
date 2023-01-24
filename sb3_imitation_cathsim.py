@@ -5,6 +5,8 @@ Refer to the jupyter notebooks for more detailed examples of how to use the algo
 
 import gym
 import numpy as np
+from pathlib import Path
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -14,8 +16,10 @@ from imitation.algorithms import bc
 from imitation.data import rollout
 from imitation.data.wrappers import RolloutInfoWrapper
 from imitation.data import types
+from wrapper_gym import _flatten_obs
 
 from wrapper_gym import DMEnv
+from utils import process_transitions
 from gym.wrappers import TimeLimit, RecordVideo
 from dm_control import composer
 from cathsim import Navigate, Tip, Guidewire, Phantom
@@ -46,40 +50,14 @@ def env_creator():
         render_kwargs=render_kwargs,
         channels_first=True,
     )
-    env = TimeLimit(env, max_episode_steps=400)
-    # env = FrameStack(env, 4)
+    env = TimeLimit(env, max_episode_steps=200)
     return env
 
 
 env = env_creator()
 
-# load np pickle file
-data = np.load("./data/episode_0/trajectory.npz", allow_pickle=True)
-
-
-def process_transitions(data):
-    obs = []
-    acts = []
-    print("Processing expert transitions.")
-    # merge the values of the dictionary of the keys that are not "action"
-    for key in data.keys():
-        if key != "action":
-            obs.append(data[key])
-        else:
-            acts.append(data[key])
-    obs = np.concatenate(obs, axis=-1)
-    new_obs = obs[1:]
-    obs = obs[:-1]
-    acts = np.concatenate(acts)[0:-1]
-    dones = np.zeros_like(acts[:, 0])
-    dones[-1] = 1
-    dones = dones.astype(bool)
-    print("Length of obs:", len(obs))
-    print("Length of acts:", len(acts[:, 0]))
-    return types.Transitions(obs, acts, [{} for i in obs], new_obs, dones=dones)
-
-
-transitions = process_transitions(data)
+trial_path = Path.cwd() / "rl" / "expert" / "trial_0"
+transitions = process_transitions(trial_path)
 
 bc_trainer = bc.BC(
     observation_space=env.observation_space,
@@ -98,10 +76,12 @@ print(f"Reward before training: {reward}")
 print("Training a policy using Behavior Cloning")
 bc_trainer.train(n_epochs=1)
 
+bc_trainer.save("./rl/checkpoint/bc_model")
+
 reward, _ = evaluate_policy(
     bc_trainer.policy,  # type: ignore[arg-type]
     env,
     n_eval_episodes=3,
-    render=True,
 )
+
 print(f"Reward after training: {reward}")

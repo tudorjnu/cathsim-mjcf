@@ -1,5 +1,6 @@
 import math
 import os
+from pathlib import Path
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
@@ -476,7 +477,7 @@ class Navigate(composer.Task):
 
 class Application(viewer.application.Application):
 
-    def __init__(self, title, width, height):
+    def __init__(self, title, width, height, trial_path='data/trial_0'):
         super().__init__(title, width, height)
 
         self._input_map.bind(self._move_forward,  user_input.KEY_UP)
@@ -488,27 +489,32 @@ class Application(viewer.application.Application):
         self._episode = 0
         self._policy = None
         self._trajectory = {}
-        os.makedirs('data/episode_0/images', exist_ok=True)
+        self._trial_path = trial_path
+        self._episode_path = self._trial_path / 'episode_0'
+        self._images_path = self._episode_path / 'images'
+        self._images_path.mkdir(parents=True, exist_ok=True)
 
     def _save_transition(self, observation, action):
         for key, value in observation.items():
             if key != 'top_camera':
                 self._trajectory.setdefault(key, []).append(value)
             else:
-                plt.imsave(
-                    f'./data/episode_{self._episode}/images/{self._step}.png',
-                    value)
+                image_path = self._images_path / f'{self._step}.png'
+                plt.imsave(image_path.as_posix(), value)
         self._trajectory.setdefault('action', []).append(action)
 
     def _initialize_episode(self):
-        np.savez_compressed(
-            f'./data/episode_{self._episode}/trajectory', **self._trajectory)
+        trajectory_path = self._episode_path / 'trajectory'
+        np.savez_compressed(trajectory_path.as_posix(), **self._trajectory)
         self._restart_runtime()
         print(f'Episode {self._episode} finished')
         self._trajectory = {}
         self._step = 0
         self._episode += 1
-        os.makedirs(f'./data/episode_{self._episode}/images', exist_ok=True)
+        # change the episode path to the new episode
+        self._episode_path = self._trial_path / f'episode_{self._episode}'
+        self._images_path = self._episode_path / 'images'
+        self._images_path.mkdir(parents=True, exist_ok=True)
 
     def perform_action(self):
         print('step', self._step)
@@ -539,7 +545,7 @@ class Application(viewer.application.Application):
 
 
 def launch(environment_loader, policy=None, title='Explorer', width=1024,
-           height=768):
+           height=768, trial_path=None):
     """Launches an environment viewer.
 
     Args:
@@ -555,12 +561,14 @@ def launch(environment_loader, policy=None, title='Explorer', width=1024,
     Raises:
         ValueError: When 'environment_loader' argument is set to None.
     """
-    app = Application(title=title, width=width, height=height)
+    app = Application(title=title, width=width,
+                      height=height, trial_path=trial_path)
     app.launch(environment_loader=environment_loader, policy=policy)
 
 
 if __name__ == "__main__":
     from dm_control import viewer
+    trial_path = Path.cwd() / 'data' / 'trial_0'
 
     phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
     tip = Tip(n_bodies=4)
@@ -604,7 +612,7 @@ if __name__ == "__main__":
         action[0] = 1
         return action
 
-    launch(env)
+    launch(env, trial_path=trial_path)
 
     exit()
     i = 0
