@@ -1,53 +1,29 @@
+from gym import spaces
+import gym
 
-from cathsim import Navigate, Tip, Guidewire, Phantom
+from dm_env import specs
 
-from dm_control import composer
-from dm_control.suite.wrappers.pixels import Wrapper
-
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3 import PPO
-
-from gym import core, spaces
-from gym.wrappers import TimeLimit
-
-import cv2
-
-
-try:
-    from dm_env import specs
-except ImportError:
-    specs = None
-try:
-    # Suppress MuJoCo warning (dm_control uses absl logging).
-    import absl.logging
-
-    absl.logging.set_verbosity("error")
-    from dm_control import suite
-except (ImportError, OSError):
-    suite = None
 import numpy as np
 
 
-def _spec_to_box(spec):
-    def extract_min_max(s):
-        assert s.dtype == np.float64 or s.dtype == np.float32
-        dim = np.int16(np.prod(s.shape))
-        if type(s) == specs.Array:
-            bound = np.inf * np.ones(dim, dtype=np.float32)
-            return -bound, bound
-        elif type(s) == specs.BoundedArray:
-            zeros = np.zeros(dim, dtype=np.float32)
-            return s.minimum + zeros, s.maximum + zeros
-
-    mins, maxs = [], []
-    for s in spec:
-        mn, mx = extract_min_max(s)
-        mins.append(mn)
-        maxs.append(mx)
-    low = np.concatenate(mins, axis=0)
-    high = np.concatenate(maxs, axis=0)
-    assert low.shape == high.shape
-    return spaces.Box(low, high, dtype=np.float32)
+def convert_dm_control_to_gym_space(dm_control_space):
+    r"""Convert dm_control space to gym space. """
+    if isinstance(dm_control_space, specs.BoundedArray):
+        space = spaces.Box(low=dm_control_space.minimum,
+                           high=dm_control_space.maximum,
+                           dtype=dm_control_space.dtype)
+        assert space.shape == dm_control_space.shape
+        return space
+    elif isinstance(dm_control_space, specs.Array) and not isinstance(dm_control_space, specs.BoundedArray):
+        space = spaces.Box(low=-float('inf'),
+                           high=float('inf'),
+                           shape=dm_control_space.shape,
+                           dtype=dm_control_space.dtype)
+        return space
+    elif isinstance(dm_control_space, dict):
+        space = spaces.Dict({key: convert_dm_control_to_gym_space(value)
+                             for key, value in dm_control_space.items()})
+        return space
 
 
 def _flatten_obs(obs):
@@ -58,182 +34,124 @@ def _flatten_obs(obs):
     return np.concatenate(obs_pieces, axis=0)
 
 
-class DMEnv(core.Env):
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
+class DMEnv(gym.Env):
+    def __init__(self, env, task_kwargs=None, env_kwargs=None, render_kwargs=None):
 
-    def __init__(
-        self,
-        env,
-        env_kwargs=None,
-        visualize_reward=False,
-        from_pixels=False,
-        height=256,
-        width=256,
-        camera_id=0,
-        frame_skip=4,
-        environment_kwargs=None,
-        render_kwargs=None,
-        channels_first=True,
-        preprocess=True,
-    ):
+        self.env = env
+        self.metadata = {'render.modes': ['rgb_array'],
+                         'video.frames_per_second': round(1.0/self.env.control_timestep())}
 
-        self._render_kwargs = render_kwargs
-        if render_kwargs is None:
-            render_kwargs = {}
+        self.env_kwargs = env_kwargs or {}
+        self.render_kwargs = render_kwargs or {}
 
-        self._height = render_kwargs.get('height', 256)
-        self._width = render_kwargs.get('width', 256)
-        self._camera_id = render_kwargs.get('camera_id', 0)
+        self.render_kwargs.setdefault('camera_id', 0)
+        self.render_kwargs.setdefault('height', 256)
+        self.render_kwargs.setdefault('width', 256)
+        self.env_kwargs.setdefault('from_pixels', False)
 
-        self._from_pixels = from_pixels
-        self._frame_skip = frame_skip
-        self._channels_first = channels_first
-        self.preprocess = preprocess
-        self.render_mode = "rgb_array"
+        self.action_space = convert_dm_control_to_gym_space(
+            self.env.action_spec())
+        self.viewer = None
 
-        if specs is None:
-            raise RuntimeError(
-                (
-                    "The `specs` module from `dm_env` was not imported. Make sure "
-                    "`dm_env` is installed and visible in the current python "
-                    "environment."
-                )
-            )
-        if suite is None:
-            raise RuntimeError(
-                (
-                    "The `suite` module from `dm_control` was not imported. Make "
-                    "sure `dm_control` is installed and visible in the current "
-                    "python enviornment."
-                )
-            )
-
-        # MDP creation
-        self._env = env
-        if from_pixels:
-            self._env = Wrapper(self._env, render_kwargs=render_kwargs)
+        if self.env_kwargs['from_pixels']:
+            from dm_control.suite.wrappers import pixels
+            self.env = pixels.Wrapper(
+                self.env, render_kwargs=self.render_kwargs)
             print('Wrapped Env')
 
-        # true and normalized action spaces
-        self._true_action_space = _spec_to_box([self._env.action_spec()])
-        self._norm_action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=self._true_action_space.shape, dtype=np.float32
-        )
-
-        # create observation space
-        if from_pixels:
-            shape = [3, height, width] if channels_first else [
-                height, width, 3]
-            self._observation_space = spaces.Box(
+            shape = [3, self.render_kwargs['height'], self.render_kwargs['width']] if \
+                env_kwargs['channels_first'] else \
+                [self.render_kwargs['height'], self.render_kwargs['width'], 3]
+            self.observation_space = spaces.Box(
                 low=0, high=255, shape=shape, dtype=np.uint8
             )
-            if preprocess:
-                self._observation_space = spaces.Box(
+            if env_kwargs['preprocess']:
+                self.observation_space = spaces.Box(
                     low=-0.5, high=0.5, shape=shape, dtype=np.float32
                 )
         else:
-            self._observation_space = _spec_to_box(
-                self._env.observation_spec().values()
-            )
+            self.observation_space = convert_dm_control_to_gym_space(
+                self.env.observation_spec())
 
-        self._state_space = _spec_to_box(self._env.observation_spec().values())
-
-        self.current_state = None
-
-    def __getattr__(self, name):
-        return getattr(self._env, name)
-
-    def _get_obs(self, time_step):
-        if self._from_pixels:
-            obs = self.render(
-                height=self._height, width=self._width, camera_id=self._camera_id
-            )
-            if self._channels_first:
-                obs = obs.transpose(2, 0, 1).copy()
-            if self.preprocess:
-                obs = obs / 255.0 - 0.5
-        else:
-            obs = _flatten_obs(time_step.observation)
-        return obs
-
-    def _convert_action(self, action):
-        action = action.astype(np.float64)
-        true_delta = self._true_action_space.high - self._true_action_space.low
-        norm_delta = self._norm_action_space.high - self._norm_action_space.low
-        action = (action - self._norm_action_space.low) / norm_delta
-        action = action * true_delta + self._true_action_space.low
-        action = action.astype(np.float32)
-        return action
-
-    @property
-    def observation_space(self):
-        return self._observation_space
-
-    @property
-    def state_space(self):
-        return self._state_space
-
-    @property
-    def action_space(self):
-        return self._norm_action_space
+    def seed(self, seed):
+        return self.env.random_state.seed
 
     def step(self, action):
-        assert self._norm_action_space.contains(action)
-        action = self._convert_action(action)
-        assert self._true_action_space.contains(action)
-        reward = 0
-        extra = {"internal_state": self._env.physics.get_state().copy()}
+        timestep = self.env.step(action)
+        observation = self._get_obs(timestep)
+        reward = timestep.reward
+        done = timestep.last()
+        info = {}
+        return observation, reward, done, info
 
-        done = False
-        for _ in range(self._frame_skip):
-            time_step = self._env.step(action)
-            reward += time_step.reward or 0
-            done = time_step.last()
-            if done:
-                break
-        obs = self._get_obs(time_step)
-        self.current_state = _flatten_obs(time_step.observation)
-        extra["discount"] = time_step.discount
-        return obs, reward, done, extra
-
-    def reset(self, *, seed=None, options=None):
-        time_step = self._env.reset()
-        self.current_state = _flatten_obs(time_step.observation)
-        obs = self._get_obs(time_step)
+    def reset(self):
+        timestep = self.env.reset()
+        obs = self._get_obs(timestep)
         return obs
 
-    def render(self, mode="rgb_array", height=480, width=480, camera_id=0):
+    def render(self, mode="rgb_array", height=256, width=256, camera_id=0):
         assert mode == "rgb_array", "only support for rgb_array mode"
-        height = height or self._height
-        width = width or self._width
-        camera_id = camera_id or self._camera_id
-        img = self._env.physics.render(
+        height = self.render_kwargs.get('height', height)
+        width = self.render_kwargs.get('width', width)
+        camera_id = self.render_kwargs.get('camera_id', camera_id)
+        img = self.env.physics.render(
             height=height, width=width, camera_id=camera_id)
         return img
 
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+            self.viewer = None
+        return self.env.close()
+
+    def _get_obs(self, timestep):
+        if self.env_kwargs['from_pixels']:
+            obs = timestep.observation['pixels']
+            # it doesn't seem that it works, can you make it work?
+            if self.env_kwargs['channels_first']:
+                obs = obs.transpose(2, 0, 1).copy()
+            if self.env_kwargs['preprocess']:
+                obs = obs / 255.0 - 0.5
+                obs = obs.astype(np.float32)
+        else:
+            obs = timestep.observation
+        return obs
+
 
 if __name__ == "__main__":
-    env = DMEnv()
-    env = TimeLimit(env, 100)
+    from gym.wrappers import NormalizeObservation, FlattenObservation, GrayScaleObservation
+    from gym.utils.env_checker import check_env
 
-    print(env.observation_space.shape)
+    from cathsim import Navigate, Tip, Guidewire, Phantom
+    from dm_control import composer
+
+    import cv2
+
+    env_kwargs = {'from_pixels': False,
+                  'channels_first': False,
+                  'preprocess': False}
+    phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
+    tip = Tip(n_bodies=4)
+    guidewire = Guidewire(n_bodies=80)
+    task = Navigate(
+        phantom=phantom,
+        guidewire=guidewire,
+        tip=tip,
+    )
+    env = composer.Environment(
+        task=task,
+        random_state=np.random.RandomState(42),
+        strip_singleton_obs_buffer_dim=True,
+    )
+    env = DMEnv(env, env_kwargs=env_kwargs)
+    env = FlattenObservation(env)
+    # env = NormalizeObservation(env)
+    check_env(env)
     obs = env.reset()
-    print(obs.shape)
-
-    # check_env(env)
-    # exit()
-
-    model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=10_000)
-
-    vec_env = model.get_env()
-    obs = vec_env.reset()
-    for i in range(1000):
-        action, _states = model.predict(obs, deterministic=True)
-        obs, reward, done, info = vec_env.step(action)
-        vec_env.render()
-        # VecEnv resets automatically
-        # if done:
-        #   obs = env.reset()
-
-    env.close()
+    for _ in range(20):
+        cv2.imshow("obs", env.render(mode="rgb_array"))
+        cv2.waitKey(1)
+        action = np.zeros_like(env.action_space.sample())
+        action[0] = 1
+        obs, reward, done, info = env.step(action)
+        print("Obs:", obs, reward, done, info)
