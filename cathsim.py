@@ -16,6 +16,8 @@ from dm_control.composer.observation.observable import MujocoCamera
 from dm_control import viewer
 from dm_control.viewer import user_input
 
+from wrapper_gym import DMEnv
+
 
 _DEFAULT_TIME_LIMIT = 2
 _CONTROL_TIMESTEP = .004
@@ -587,17 +589,6 @@ if __name__ == "__main__":
         strip_singleton_obs_buffer_dim=True,
     )
 
-    # env = Wrapper(
-    #     env,
-    #     render_kwargs={
-    #         'height': 256,
-    #         'width': 256,
-    #         'camera_id': 0,
-    #         'segmentation': False,
-    #         'scene_option': None
-    #     },
-    # )
-
     action_spec = env.action_spec()
     print(action_spec)
     time_step = env.reset()
@@ -613,11 +604,4 @@ if __name__ == "__main__":
         return action
 
     launch(env, trial_path=trial_path)
-
     exit()
-    i = 0
-    while not time_step.last():
-        time_step = env.step(random_policy(time_step))
-        print(time_step.last(), env.physics.time())
-        print("Step", i)
-        i += 1

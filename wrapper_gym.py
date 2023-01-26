@@ -1,9 +1,9 @@
+import numpy as np
+
 from gym import spaces
 import gym
 
 from dm_env import specs
-
-import numpy as np
 
 
 def convert_dm_control_to_gym_space(dm_control_space):
@@ -119,33 +119,19 @@ class DMEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    from gym.wrappers import NormalizeObservation, FlattenObservation, GrayScaleObservation
     from gym.utils.env_checker import check_env
-
-    from cathsim import Navigate, Tip, Guidewire, Phantom
-    from dm_control import composer
-
+    from utils import env_creator
     import cv2
-
-    env_kwargs = {'from_pixels': False,
-                  'channels_first': False,
-                  'preprocess': False}
-    phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
-    tip = Tip(n_bodies=4)
-    guidewire = Guidewire(n_bodies=80)
-    task = Navigate(
-        phantom=phantom,
-        guidewire=guidewire,
-        tip=tip,
+    env = env_creator(
+        flatten_obs=True,
+        time_limit=1000,
+        normalize_obs=False,
+        frame_stack=1,
+        render_kwargs={
+            'from_pixels': True,
+            'preprocess': True,
+        }
     )
-    env = composer.Environment(
-        task=task,
-        random_state=np.random.RandomState(42),
-        strip_singleton_obs_buffer_dim=True,
-    )
-    env = DMEnv(env, env_kwargs=env_kwargs)
-    env = FlattenObservation(env)
-    # env = NormalizeObservation(env)
     check_env(env)
     obs = env.reset()
     for _ in range(20):

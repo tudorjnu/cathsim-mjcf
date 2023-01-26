@@ -23,7 +23,7 @@ from utils import process_transitions
 from gym.wrappers import TimeLimit, RecordVideo
 from dm_control import composer
 from cathsim import Navigate, Tip, Guidewire, Phantom
-
+from sb3_algos import ALGOS
 
 env = gym.make("CartPole-v1")
 rng = np.random.default_rng(0)
