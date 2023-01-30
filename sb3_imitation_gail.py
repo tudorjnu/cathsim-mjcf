@@ -55,6 +55,9 @@ if __name__ == "__main__":
     airl_trainer = ALGOS['gail'](
         demonstrations=transitions,
         venv=venv,
+        demo_batch_size=1024,
+        gen_replay_buffer_capacity=2048,
+        n_disc_updates_per_round=4,
         gen_algo=learner,
         reward_net=reward_net,
         log_dir=log_path.as_posix(),
