@@ -3,20 +3,14 @@ import os
 from pathlib import Path
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 
-import mujoco
 from dm_control import mjcf
 from dm_control import composer
 from dm_control.composer import variation
 from dm_control.composer.variation import distributions, noises
 from dm_control.composer.observation import observable
-from dm_control.suite.wrappers.pixels import Wrapper
 from dm_control.composer.observation.observable import MujocoCamera
-from dm_control import viewer
-from dm_control.viewer import user_input
-
-from wrapper_gym import DMEnv
+from utils import launch
 
 
 _DEFAULT_TIME_LIMIT = 2
@@ -256,7 +250,7 @@ class Guidewire(composer.Entity):
         for n in range(1, n_bodies):
             parent = add_body(n, parent, stiffness=stiffness)
             stiffness *= 0.995
-        print('stiffness', stiffness)
+        # print('stiffness', stiffness)
         self._tip_site = parent.add(
             'site', name='tip_site', pos=[0, 0, OFFSET])
 
@@ -428,7 +422,6 @@ class Navigate(composer.Task):
             )
 
         for obs in self._task_observables.values():
-            print('Observation:', obs)
             obs.enabled = True
 
         self.control_timestep = _NUM_SUBSTEPS * self.physics_timestep
@@ -477,100 +470,9 @@ class Navigate(composer.Task):
         return reward
 
 
-class Application(viewer.application.Application):
-
-    def __init__(self, title, width, height, trial_path='data/trial_0'):
-        super().__init__(title, width, height)
-
-        self._input_map.bind(self._move_forward,  user_input.KEY_UP)
-        self._input_map.bind(self._move_back,  user_input.KEY_DOWN)
-        self._input_map.bind(self._move_left,  user_input.KEY_LEFT)
-        self._input_map.bind(self._move_right,  user_input.KEY_RIGHT)
-        self.null_action = np.zeros(2)
-        self._step = 0
-        self._episode = 0
-        self._policy = None
-        self._trajectory = {}
-        self._trial_path = trial_path
-        self._episode_path = self._trial_path / 'episode_0'
-        self._images_path = self._episode_path / 'images'
-        self._images_path.mkdir(parents=True, exist_ok=True)
-
-    def _save_transition(self, observation, action):
-        for key, value in observation.items():
-            if key != 'top_camera':
-                self._trajectory.setdefault(key, []).append(value)
-            else:
-                image_path = self._images_path / f'{self._step}.png'
-                plt.imsave(image_path.as_posix(), value)
-        self._trajectory.setdefault('action', []).append(action)
-
-    def _initialize_episode(self):
-        trajectory_path = self._episode_path / 'trajectory'
-        np.savez_compressed(trajectory_path.as_posix(), **self._trajectory)
-        self._restart_runtime()
-        print(f'Episode {self._episode} finished')
-        self._trajectory = {}
-        self._step = 0
-        self._episode += 1
-        # change the episode path to the new episode
-        self._episode_path = self._trial_path / f'episode_{self._episode}'
-        self._images_path = self._episode_path / 'images'
-        self._images_path.mkdir(parents=True, exist_ok=True)
-
-    def perform_action(self):
-        print('step', self._step)
-        time_step = self._runtime._time_step
-        if not time_step.last():
-            self._advance_simulation()
-            action = self._runtime._last_action
-            self._save_transition(time_step.observation, action)
-            self._step += 1
-        else:
-            self._initialize_episode()
-
-    def _move_forward(self):
-        self._runtime._default_action = [1, 0]
-        self.perform_action()
-
-    def _move_back(self):
-        self._runtime._default_action = [-1, 0]
-        self.perform_action()
-
-    def _move_left(self):
-        self._runtime._default_action = [0, -1]
-        self.perform_action()
-
-    def _move_right(self):
-        self._runtime._default_action = [0, 1]
-        self.perform_action()
-
-
-def launch(environment_loader, policy=None, title='Explorer', width=1024,
-           height=768, trial_path=None):
-    """Launches an environment viewer.
-
-    Args:
-      environment_loader: An environment loader (a callable that returns an
-        instance of dm_control.rl.control.Environment), an instance of
-        dm_control.rl.control.Environment.
-      policy: An optional callable corresponding to a policy to execute within the
-        environment. It should accept a `TimeStep` and return a numpy array of
-        actions conforming to the output of `environment.action_spec()`.
-      title: Application title to be displayed in the title bar.
-      width: Window width, in pixels.
-      height: Window height, in pixels.
-    Raises:
-        ValueError: When 'environment_loader' argument is set to None.
-    """
-    app = Application(title=title, width=width,
-                      height=height, trial_path=trial_path)
-    app.launch(environment_loader=environment_loader, policy=policy)
-
-
 if __name__ == "__main__":
-    from dm_control import viewer
-    trial_path = Path.cwd() / 'data' / 'trial_0'
+    trial_path = Path.cwd() / 'rl' / 'expert' / 'trial_1'
+    trial_path.mkdir(parents=True, exist_ok=True)
 
     phantom = Phantom("assets/phantom4.xml", model_dir="./assets")
     tip = Tip(n_bodies=4)
@@ -589,19 +491,11 @@ if __name__ == "__main__":
         strip_singleton_obs_buffer_dim=True,
     )
 
-    action_spec = env.action_spec()
-    print(action_spec)
+    action_spec_name = '\t' + env.action_spec().name.replace('\t', '\n\t')
+    print('\nAction Spec:\n', action_spec_name)
     time_step = env.reset()
+    print('\nObservation Spec:')
     for key, value in time_step.observation.items():
-        print(key, value.shape)
-
-    def random_policy(time_step):
-        print(time_step.last())
-        action = np.random.uniform(low=action_spec.minimum,
-                                   high=action_spec.maximum,
-                                   size=action_spec.shape)
-        action[0] = 1
-        return action
+        print('\t', key, value.shape)
 
     launch(env, trial_path=trial_path)
-    exit()

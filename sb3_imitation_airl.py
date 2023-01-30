@@ -7,6 +7,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.ppo import MlpPolicy
 
 from imitation.algorithms import bc
@@ -20,6 +21,12 @@ from imitation.rewards.reward_nets import BasicShapedRewardNet
 from imitation.util.networks import RunningNorm
 
 if __name__ == "__main__":
+    trial_path = Path.cwd() / 'rl' / 'sb3' / 'trial_1'
+    log_path = trial_path / 'logs'
+    model_path = trial_path / 'checkpoints'
+
+    for path in [log_path, model_path]:
+        path.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(0)
 
     env = make_env(
@@ -33,7 +40,7 @@ if __name__ == "__main__":
         wrap_monitor=True,
     )
 
-    trial_path = Path.cwd() / "rl" / "expert" / "trial_0"
+    trial_path = Path.cwd() / "rl" / "expert" / "trial_1"
     transitions = process_transitions(trial_path)
 
     venv = make_vec_env(lambda: make_env(), n_envs=8)
@@ -47,16 +54,27 @@ if __name__ == "__main__":
 
     airl_trainer = ALGOS['airl'](
         demonstrations=transitions,
-        demo_batch_size=1024,
+        demo_batch_size=32,
         gen_replay_buffer_capacity=2048,
         n_disc_updates_per_round=4,
         venv=venv,
         gen_algo=learner,
         reward_net=reward_net,
+        log_dir=log_path.as_posix(),
     )
 
-    airl_trainer.train(20000)
-    rewards, _ = evaluate_policy(
-        learner, venv, 100, return_episode_rewards=True)
+    checkpoint_callback = CheckpointCallback(
+        save_freq=400,
+        save_path=trial_path.as_posix(),
+        name_prefix="AIRL",
+        save_replay_buffer=True,
+        save_vecnormalize=True,
+        verbose=1,
+    )
 
-    print("Rewards:", rewards)
+    airl_trainer.train(20000, callback=checkpoint_callback)
+    rewards, _ = evaluate_policy(
+        learner, venv, 4, return_episode_rewards=True)
+
+    print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+    airl_trainer.save(model_path.as_posix())

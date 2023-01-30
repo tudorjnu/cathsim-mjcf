@@ -1,20 +1,24 @@
 import numpy as np
-from imitation.data import rollout, types
+import matplotlib.pyplot as plt
 from pathlib import Path
+from dm_control.viewer.application import Application
 
 
 def process_trajectory(data):
+    from imitation.data.types import Trajectory
     acts = data.pop('action')[:-1]
     obs = []
     for key, value in data.items():
         obs.append(value)
     obs = np.concatenate(obs, axis=1)
-    return types.Trajectory(obs, acts, None, terminal=True)
+    return Trajectory(obs, acts, None, terminal=True)
 
 
-def process_transitions(trial_path: Path) -> types.Transitions:
+def process_transitions(trial_path: str):
+    from imitation.data.rollout import flatten_trajectories
     # traverse the directory and load the npz files
     # process each file into a trajectory
+    trial_path = Path(trial_path)
     trajectories = []
     print("Processing expert transitions.")
     for episode_path in trial_path.iterdir():
@@ -22,7 +26,7 @@ def process_transitions(trial_path: Path) -> types.Transitions:
         data = dict(data)
         trajectories.append(process_trajectory(data))
     print('Processed {} trajectories'.format(len(trajectories)))
-    return rollout.flatten_trajectories(trajectories)
+    return flatten_trajectories(trajectories)
 
 
 def make_env(flatten_obs: bool = True, time_limit: int = 200,
@@ -85,3 +89,95 @@ def make_env(flatten_obs: bool = True, time_limit: int = 200,
         from stable_baselines3.common.monitor import Monitor
         env = Monitor(env)
     return env
+
+
+class Application(Application):
+
+    def __init__(self, title, width, height, trial_path='data/trial_0'):
+        super().__init__(title, width, height)
+        from dm_control.viewer import user_input
+
+        self._input_map.bind(self._move_forward,  user_input.KEY_UP)
+        self._input_map.bind(self._move_back,  user_input.KEY_DOWN)
+        self._input_map.bind(self._move_left,  user_input.KEY_LEFT)
+        self._input_map.bind(self._move_right,  user_input.KEY_RIGHT)
+        self.null_action = np.zeros(2)
+        self._step = 0
+        self._episode = 8
+        self._policy = None
+        self._trajectory = {}
+        self._trial_path = trial_path
+        self._episode_path = self._trial_path / 'episode_0'
+        self._images_path = self._episode_path / 'images'
+        self._images_path.mkdir(parents=True, exist_ok=True)
+
+    def _save_transition(self, observation, action):
+        for key, value in observation.items():
+            if key != 'top_camera':
+                self._trajectory.setdefault(key, []).append(value)
+            else:
+                image_path = self._images_path / f'{self._step:03}.png'
+                plt.imsave(image_path.as_posix(), value)
+        self._trajectory.setdefault('action', []).append(action)
+
+    def _initialize_episode(self):
+        trajectory_path = self._episode_path / 'trajectory'
+        np.savez_compressed(trajectory_path.as_posix(), **self._trajectory)
+        self._restart_runtime()
+        print(f'Episode {self._episode:02} finished')
+        self._trajectory = {}
+        self._step = 0
+        self._episode += 1
+        # change the episode path to the new episode
+        self._episode_path = self._trial_path / f'episode_{self._episode}'
+        self._images_path = self._episode_path / 'images'
+        self._images_path.mkdir(parents=True, exist_ok=True)
+
+    def perform_action(self):
+        print(f'step {self._step:03}')
+        time_step = self._runtime._time_step
+        if not time_step.last():
+            self._advance_simulation()
+            action = self._runtime._last_action
+            self._save_transition(time_step.observation, action)
+            self._step += 1
+        else:
+            self._initialize_episode()
+
+    def _move_forward(self):
+        self._runtime._default_action = [1, 0]
+        self.perform_action()
+
+    def _move_back(self):
+        self._runtime._default_action = [-1, 0]
+        self.perform_action()
+
+    def _move_left(self):
+        self._runtime._default_action = [0, -1]
+        self.perform_action()
+
+    def _move_right(self):
+        self._runtime._default_action = [0, 1]
+        self.perform_action()
+
+
+def launch(environment_loader, policy=None, title='Explorer', width=1024,
+           height=768, trial_path=None):
+    """Launches an environment viewer.
+
+    Args:
+      environment_loader: An environment loader (a callable that returns an
+        instance of dm_control.rl.control.Environment), an instance of
+        dm_control.rl.control.Environment.
+      policy: An optional callable corresponding to a policy to execute within the
+        environment. It should accept a `TimeStep` and return a numpy array of
+        actions conforming to the output of `environment.action_spec()`.
+      title: Application title to be displayed in the title bar.
+      width: Window width, in pixels.
+      height: Window height, in pixels.
+    Raises:
+        ValueError: When 'environment_loader' argument is set to None.
+    """
+    app = Application(title=title, width=width,
+                      height=height, trial_path=trial_path)
+    app.launch(environment_loader=environment_loader, policy=policy)
