@@ -42,8 +42,6 @@ if __name__ == "__main__":
     print("Training a policy using Behavior Cloning")
     bc_trainer.train(n_epochs=200)
 
-    bc_trainer.save("./rl/checkpoint/bc_model")
-
     reward, _ = evaluate_policy(
         bc_trainer.policy,  # type: ignore[arg-type]
         env,
@@ -51,3 +49,4 @@ if __name__ == "__main__":
     )
 
     print(f"Reward after training: {reward}")
+    bc_trainer.save_policy("./rl/checkpoint/bc_model")

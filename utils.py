@@ -27,6 +27,9 @@ def process_transitions(trial_path: str):
     transitions = flatten_trajectories(trajectories)
     print(
         f'Processed {len(trajectories)} trajectories ({len(transitions)} transitions)')
+    trajectory_lengths = [len(traj) for traj in trajectories]
+    print('mean trajectory length:', np.mean(trajectory_lengths))
+
     return transitions
 
 
