@@ -73,8 +73,7 @@ if __name__ == "__main__":
     )
 
     airl_trainer.train(20000, callback=checkpoint_callback)
-    rewards, _ = evaluate_policy(
-        learner, venv, 4, return_episode_rewards=True)
-
-    print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
     airl_trainer.save(model_path.as_posix())
+
+    rewards, _ = evaluate_policy(learner, venv, 4, return_episode_rewards=True)
+    print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")

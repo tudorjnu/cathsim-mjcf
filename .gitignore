@@ -5,6 +5,7 @@ stl2mjcf/*
 checkpoints/
 stl2mjcf.py
 data/
+rl/expert/trial_1_backup/
 
 
 # Byte-compiled / optimized / DLL files

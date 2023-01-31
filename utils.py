@@ -20,13 +20,14 @@ def process_transitions(trial_path: str):
     # process each file into a trajectory
     trial_path = Path(trial_path)
     trajectories = []
-    print("Processing expert transitions.")
     for episode_path in trial_path.iterdir():
         data = np.load(episode_path / "trajectory.npz", allow_pickle=True)
         data = dict(data)
         trajectories.append(process_trajectory(data))
-    print('Processed {} trajectories'.format(len(trajectories)))
-    return flatten_trajectories(trajectories)
+    transitions = flatten_trajectories(trajectories)
+    print(
+        f'Processed {len(trajectories)} trajectories ({len(transitions)} transitions)')
+    return transitions
 
 
 def make_env(flatten_obs: bool = True, time_limit: int = 200,
