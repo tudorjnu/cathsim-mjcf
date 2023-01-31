@@ -8,7 +8,11 @@ from imitation.algorithms import bc
 
 
 if __name__ == "__main__":
-
+    expert_path = Path.cwd() / 'rl' / 'sb3' / 'trial_1'
+    log_path = expert_path / 'logs' / 'bc'
+    model_path = expert_path / 'checkpoints'
+    for path in [log_path, model_path]:
+        path.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(0)
 
     env = make_env(
@@ -35,18 +39,21 @@ if __name__ == "__main__":
     reward, _ = evaluate_policy(
         bc_trainer.policy,  # type: ignore[arg-type]
         env,
-        n_eval_episodes=3,
+        n_eval_episodes=4,
     )
     print(f"Reward before training: {reward}")
 
     print("Training a policy using Behavior Cloning")
     bc_trainer.train(n_epochs=200)
 
-    reward, _ = evaluate_policy(
+    rewards, lengths = evaluate_policy(
         bc_trainer.policy,  # type: ignore[arg-type]
         env,
         n_eval_episodes=3,
+        return_episode_rewards=True,
     )
 
-    print(f"Reward after training: {reward}")
-    bc_trainer.save_policy("./rl/checkpoint/bc_model")
+    print(f"Reward after training: {np.mean(rewards)}")
+    print(f"Lengths: {np.mean(lengths)}")
+
+    bc_trainer.save_policy(str(model_path / 'bc'))
