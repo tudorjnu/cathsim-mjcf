@@ -44,7 +44,14 @@ if __name__ == "__main__":
     transitions = process_transitions(expert_path)
 
     venv = make_vec_env(lambda: make_env(), n_envs=8)
-    learner = PPO(env=venv, policy=MlpPolicy)
+    learner = PPO(
+        env=venv,
+        policy=MlpPolicy,
+        batch_size=64,
+        ent_coef=0.0,
+        learning_rate=0.0003,
+        n_epochs=50000,
+    )
 
     reward_net = BasicShapedRewardNet(
         venv.observation_space,
@@ -55,12 +62,12 @@ if __name__ == "__main__":
     airl_trainer = ALGOS['gail'](
         demonstrations=transitions,
         venv=venv,
-        demo_batch_size=1024,
-        gen_replay_buffer_capacity=2048,
+        demo_batch_size=128,
+        gen_replay_buffer_capacity=256,
         n_disc_updates_per_round=4,
+        venv=venv,
         gen_algo=learner,
         reward_net=reward_net,
-        log_dir=log_path.as_posix(),
     )
 
     checkpoint_callback = CheckpointCallback(
@@ -72,9 +79,16 @@ if __name__ == "__main__":
         verbose=1,
     )
 
-    airl_trainer.train(20000)
-    rewards, _ = evaluate_policy(
-        learner, venv, 4, return_episode_rewards=True)
+    rewards, lengths = evaluate_policy(
+        learner, venv, 10, return_episode_rewards=True)
+    print("Before training:")
+    print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+    print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
+    airl_trainer.train(50000)
+    rewards, lengths = evaluate_policy(
+        learner, venv, 10, return_episode_rewards=True)
 
-    print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+    print("After training")
+    print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+    print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
     airl_trainer.save(model_path.as_posix())

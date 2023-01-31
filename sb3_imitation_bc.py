@@ -44,12 +44,12 @@ if __name__ == "__main__":
     print(f"Reward before training: {reward}")
 
     print("Training a policy using Behavior Cloning")
-    bc_trainer.train(n_epochs=200)
+    bc_trainer.train(n_epochs=400)
 
     rewards, lengths = evaluate_policy(
-        bc_trainer.policy,  # type: ignore[arg-type]
+        bc_trainer.policy,
         env,
-        n_eval_episodes=3,
+        n_eval_episodes=4,
         return_episode_rewards=True,
     )
 
