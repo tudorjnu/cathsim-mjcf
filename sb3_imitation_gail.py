@@ -65,7 +65,6 @@ if __name__ == "__main__":
         demo_batch_size=128,
         gen_replay_buffer_capacity=256,
         n_disc_updates_per_round=4,
-        venv=venv,
         gen_algo=learner,
         reward_net=reward_net,
     )
