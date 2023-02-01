@@ -13,6 +13,7 @@ if __name__ == "__main__":
     model_path = expert_path / 'checkpoints'
     for path in [log_path, model_path]:
         path.mkdir(parents=True, exist_ok=True)
+
     rng = np.random.default_rng(0)
 
     env = make_env(
@@ -35,16 +36,8 @@ if __name__ == "__main__":
         demonstrations=transitions,
         rng=rng,
     )
-
-    reward, _ = evaluate_policy(
-        bc_trainer.policy,  # type: ignore[arg-type]
-        env,
-        n_eval_episodes=4,
-    )
-    print(f"Reward before training: {reward}")
-
     print("Training a policy using Behavior Cloning")
-    bc_trainer.train(n_epochs=400)
+    bc_trainer.train(n_epochs=200)
 
     rewards, lengths = evaluate_policy(
         bc_trainer.policy,
@@ -56,4 +49,4 @@ if __name__ == "__main__":
     print(f"Reward after training: {np.mean(rewards)}")
     print(f"Lengths: {np.mean(lengths)}")
 
-    bc_trainer.save_policy(str(model_path / 'bc'))
+    bc_trainer.save_policy(model_path / 'bc')
