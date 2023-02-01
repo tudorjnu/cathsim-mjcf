@@ -5,12 +5,10 @@ from utils import make_env
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.ppo import MlpPolicy
 
-from imitation.algorithms import bc
 from imitation.data.wrappers import RolloutInfoWrapper
 
 from utils import process_transitions
@@ -45,35 +43,25 @@ if __name__ == "__main__":
 
     venv = make_vec_env(lambda: make_env(), n_envs=8)
     learner = PPO(env=venv, policy=MlpPolicy)
-
     reward_net = BasicShapedRewardNet(
         venv.observation_space,
         venv.action_space,
         normalize_input_layer=RunningNorm,
     )
 
-    airl_trainer = ALGOS['airl'](
+    trainer = ALGOS['airl'](
         demonstrations=transitions,
-        demo_batch_size=32,
+        demo_batch_size=1024,
         gen_replay_buffer_capacity=2048,
         n_disc_updates_per_round=4,
         venv=venv,
         gen_algo=learner,
         reward_net=reward_net,
-        log_dir=log_path.as_posix(),
     )
 
-    checkpoint_callback = CheckpointCallback(
-        save_freq=400,
-        save_path=trial_path.as_posix(),
-        name_prefix="AIRL",
-        save_replay_buffer=True,
-        save_vecnormalize=True,
-        verbose=1,
-    )
-
-    airl_trainer.train(20000, callback=checkpoint_callback)
-    airl_trainer.save(model_path.as_posix())
-
-    rewards, _ = evaluate_policy(learner, venv, 4, return_episode_rewards=True)
+    trainer.train(20000)
+    rewards, lengths = evaluate_policy(
+        learner, venv, 4, return_episode_rewards=True)
     print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+    print(f"Mean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
+    trainer.policy.save(model_path)

@@ -10,9 +10,6 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.ppo import MlpPolicy
 
-from imitation.algorithms import bc
-from imitation.data.wrappers import RolloutInfoWrapper
-
 from utils import process_transitions
 from sb3_algos import ALGOS
 
@@ -27,11 +24,12 @@ if __name__ == "__main__":
 
     for path in [log_path, model_path]:
         path.mkdir(parents=True, exist_ok=True)
+
     rng = np.random.default_rng(0)
 
     env = make_env(
         flatten_obs=True,
-        time_limit=200,
+        time_limit=500,
         normalize_obs=False,
         frame_stack=1,
         render_kwargs=None,
@@ -44,13 +42,14 @@ if __name__ == "__main__":
     transitions = process_transitions(expert_path)
 
     venv = make_vec_env(lambda: make_env(), n_envs=8)
+
     learner = PPO(
         env=venv,
         policy=MlpPolicy,
         batch_size=64,
         ent_coef=0.0,
         learning_rate=0.0003,
-        n_epochs=50000,
+        n_epochs=10,
     )
 
     reward_net = BasicShapedRewardNet(
@@ -59,12 +58,12 @@ if __name__ == "__main__":
         normalize_input_layer=RunningNorm,
     )
 
-    airl_trainer = ALGOS['gail'](
+    trainer = ALGOS['gail'](
         demonstrations=transitions,
-        venv=venv,
-        demo_batch_size=128,
-        gen_replay_buffer_capacity=256,
+        demo_batch_size=1024,
+        gen_replay_buffer_capacity=2048,
         n_disc_updates_per_round=4,
+        venv=venv,
         gen_algo=learner,
         reward_net=reward_net,
     )
@@ -83,11 +82,12 @@ if __name__ == "__main__":
     print("Before training:")
     print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
     print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
-    airl_trainer.train(50000)
+
+    trainer.train(50000)
     rewards, lengths = evaluate_policy(
         learner, venv, 10, return_episode_rewards=True)
 
     print("After training")
     print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
     print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
-    airl_trainer.save(model_path.as_posix())
+    trainer.save(model_path.as_posix())
