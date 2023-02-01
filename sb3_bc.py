@@ -4,7 +4,10 @@ from pathlib import Path
 from utils import process_transitions, make_env
 
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.policies import ActorCriticPolicy
+from imitation.policies.base import FeedForward32Policy
 from imitation.algorithms import bc
+import torch as th
 
 
 if __name__ == "__main__":
@@ -29,10 +32,15 @@ if __name__ == "__main__":
 
     trial_path = Path.cwd() / "rl" / "expert" / "trial_1"
     transitions = process_transitions(trial_path)
-
+    policy = ActorCriticPolicy(
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        lr_schedule=lambda _: th.finfo(th.float32).max,
+    )
     bc_trainer = bc.BC(
         observation_space=env.observation_space,
         action_space=env.action_space,
+        policy=policy,
         demonstrations=transitions,
         rng=rng,
     )
@@ -49,4 +57,4 @@ if __name__ == "__main__":
     print(f"Reward after training: {np.mean(rewards)}")
     print(f"Lengths: {np.mean(lengths)}")
 
-    bc_trainer.save_policy(model_path / 'bc')
+    bc_trainer.save_policy(model_path / 'sac_bc')

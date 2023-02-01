@@ -1,16 +1,26 @@
+from stable_baselines3 import PPO
+from stable_baselines3.ppo import MlpPolicy
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.callbacks import CheckpointCallback
+
+from imitation.data import rollout
 from imitation.util.networks import RunningNorm
 from imitation.rewards.reward_nets import BasicRewardNet
 from imitation.algorithms.adversarial.gail import GAIL
-import numpy as np
-from stable_baselines3.common.vec_env import DummyVecEnv
 from imitation.util.util import make_vec_env
 from imitation.data.wrappers import RolloutInfoWrapper
-from imitation.data import rollout
+
+import numpy as np
 import gym
-from stable_baselines3 import PPO
-from stable_baselines3.ppo import MlpPolicy
-import seals  # needed to load environments
+from pathlib import Path
+import seals
+
+expert_path = Path.cwd() / 'rl' / 'sb3' / 'test'
+log_path = expert_path / 'logs'
+model_path = expert_path / 'checkpoints'
+
+for path in [log_path, model_path]:
+    path.mkdir(parents=True, exist_ok=True)
 
 env = gym.make("seals/CartPole-v0")
 expert = PPO(
@@ -41,6 +51,7 @@ rollouts = rollout.rollout(
 
 
 venv = make_vec_env("seals/CartPole-v0", n_envs=8, rng=rng)
+
 learner = PPO(
     env=venv,
     policy=MlpPolicy,
@@ -49,9 +60,13 @@ learner = PPO(
     learning_rate=0.0003,
     n_epochs=10,
 )
+
 reward_net = BasicRewardNet(
-    venv.observation_space, venv.action_space, normalize_input_layer=RunningNorm
+    venv.observation_space,
+    venv.action_space,
+    normalize_input_layer=RunningNorm
 )
+
 gail_trainer = GAIL(
     demonstrations=rollouts,
     demo_batch_size=1024,
@@ -62,13 +77,26 @@ gail_trainer = GAIL(
     reward_net=reward_net,
 )
 
-learner_rewards_before_training, _ = evaluate_policy(
-    learner, venv, 100, return_episode_rewards=True
-)
-gail_trainer.train(20000)  # Note: set to 300000 for better results
-learner_rewards_after_training, _ = evaluate_policy(
-    learner, venv, 100, return_episode_rewards=True
+checkpoint_callback = CheckpointCallback(
+    save_freq=400,
+    save_path=expert_path.as_posix(),
+    name_prefix="test",
+    save_replay_buffer=True,
+    save_vecnormalize=True,
+    verbose=1,
 )
 
-print(np.mean(learner_rewards_after_training))
-print(np.mean(learner_rewards_before_training))
+rewards, lengths = evaluate_policy(
+    learner, venv, 10, return_episode_rewards=True)
+print("Before training:")
+print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
+
+gail_trainer.train(300000)
+rewards, lengths = evaluate_policy(
+    learner, venv, 10, return_episode_rewards=True)
+
+print("After training")
+print(f"\tMean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
+print(f"\tMean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
+learner.save(model_path)
