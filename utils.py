@@ -68,6 +68,7 @@ def make_env(flatten_obs: bool = True, time_limit: int = 200,
         phantom=phantom,
         guidewire=guidewire,
         tip=tip,
+        **env_kwargs
     )
     env = composer.Environment(
         task=task,

@@ -21,11 +21,11 @@ if __name__ == "__main__":
         normalize_obs=False,
         frame_stack=1,
         render_kwargs=None,
-        env_kwargs=None,
         gym_version='gym',
         wrap_monitor=True,
+        env_kwargs=dict(dense_reward=False),
     )
 
-    model = SAC(policy=ActorCriticPolicy, env=env, verbose=1)
+    model = SAC(policy='MlpPolicy', env=env, verbose=1)
     model.policy = policy
     model.learn(total_timesteps=10000, progress_bar=True)

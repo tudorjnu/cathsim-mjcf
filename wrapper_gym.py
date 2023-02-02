@@ -11,14 +11,14 @@ def convert_dm_control_to_gym_space(dm_control_space):
     if isinstance(dm_control_space, specs.BoundedArray):
         space = spaces.Box(low=dm_control_space.minimum,
                            high=dm_control_space.maximum,
-                           dtype=dm_control_space.dtype)
+                           dtype=np.float32)
         assert space.shape == dm_control_space.shape
         return space
     elif isinstance(dm_control_space, specs.Array) and not isinstance(dm_control_space, specs.BoundedArray):
         space = spaces.Box(low=-float('inf'),
                            high=float('inf'),
                            shape=dm_control_space.shape,
-                           dtype=dm_control_space.dtype)
+                           dtype=np.float32)
         return space
     elif isinstance(dm_control_space, dict):
         space = spaces.Dict({key: convert_dm_control_to_gym_space(value)
@@ -120,9 +120,9 @@ class DMEnv(gym.Env):
 
 if __name__ == "__main__":
     from gym.utils.env_checker import check_env
-    from utils import env_creator
+    from utils import make_env
     import cv2
-    env = env_creator(
+    env = make_env(
         flatten_obs=True,
         time_limit=1000,
         normalize_obs=False,

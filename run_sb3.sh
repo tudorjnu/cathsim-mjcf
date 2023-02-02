@@ -28,6 +28,8 @@
 #SBATCH --mail-user=sgtjianu@liverpool.ac.uk
 #SBATCH --mail-type=ALL
 
+first_arg=$1
+
 # Set your maximum stack size to unlimited
 ulimit -s unlimited
 
@@ -55,8 +57,8 @@ echo "GPU_DEVICE_ORDINAL   : $GPU_DEVICE_ORDINAL"
 
 echo "Running GPU jobs:"
 
-echo "Running GPU job ray_train:"
-python sb3_train.py
+echo "Running GPU job $first_arg"
+python $first_arg
 # deactivate the gpu virtual environment
 conda deactivate
 
