@@ -1,5 +1,8 @@
 from pathlib import Path
+from utils import make_env
+
 from imitation.algorithms.bc import reconstruct_policy
+from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3 import SAC, PPO
 
 
@@ -14,7 +17,7 @@ if __name__ == "__main__":
 
     env = make_env(
         flatten_obs=True,
-        time_limit=200,
+        time_limit=500,
         normalize_obs=False,
         frame_stack=1,
         render_kwargs=None,
@@ -23,6 +26,6 @@ if __name__ == "__main__":
         wrap_monitor=True,
     )
 
-    model = SAC(policy='MlpPolicy', env=env, verbose=1)
+    model = SAC(policy=ActorCriticPolicy, env=env, verbose=1)
     model.policy = policy
     model.learn(total_timesteps=10000, progress_bar=True)
