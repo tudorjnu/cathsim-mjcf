@@ -1,4 +1,3 @@
-
 #!/bin/bash -l
 # Use the current working directory
 #SBATCH -D ./

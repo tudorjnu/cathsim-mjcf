@@ -23,7 +23,10 @@ if __name__ == "__main__":
         render_kwargs=None,
         gym_version='gym',
         wrap_monitor=True,
-        env_kwargs=dict(dense_reward=False),
+        env_kwargs=None,
+        task_kwargs=dict(
+            dense_reward=False,
+        ),
     )
 
     model = SAC(policy='MlpPolicy', env=env, verbose=1)

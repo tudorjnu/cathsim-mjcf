@@ -26,9 +26,12 @@ if __name__ == "__main__":
         normalize_obs=False,
         frame_stack=1,
         render_kwargs=None,
-        env_kwargs=None,
         gym_version='gym',
         wrap_monitor=True,
+        env_kwargs=None,
+        task_kwargs=dict(
+            dense_reward=False,
+        ),
     )
 
     trial_path = Path.cwd() / "rl" / "expert" / "trial_1"
