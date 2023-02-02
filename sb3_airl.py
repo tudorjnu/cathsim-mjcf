@@ -59,9 +59,9 @@ if __name__ == "__main__":
         reward_net=reward_net,
     )
 
-    trainer.train(20000)
+    trainer.train(100000)
     rewards, lengths = evaluate_policy(
         learner, venv, 4, return_episode_rewards=True)
     print(f"Mean reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}")
     print(f"Mean length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}")
-    trainer.policy.save(model_path)
+    trainer.policy.save(model_path / 'airl')
