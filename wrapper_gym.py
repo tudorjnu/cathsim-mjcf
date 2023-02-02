@@ -35,7 +35,7 @@ def _flatten_obs(obs):
 
 
 class DMEnv(gym.Env):
-    def __init__(self, env, task_kwargs=None, env_kwargs=None, render_kwargs=None):
+    def __init__(self, env, env_kwargs=None, render_kwargs=None):
 
         self.env = env
         self.metadata = {'render.modes': ['rgb_array'],
