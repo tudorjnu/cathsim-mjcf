@@ -1,8 +1,10 @@
 from pathlib import Path
+import numpy as np
 from utils import make_env
 
 from imitation.algorithms.bc import reconstruct_policy
 from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3 import SAC, PPO
 
 
@@ -29,6 +31,15 @@ if __name__ == "__main__":
         ),
     )
 
-    model = SAC(policy='MlpPolicy', env=env, verbose=1)
-    model.policy = policy
-    model.learn(total_timesteps=10000, progress_bar=True)
+    rewards, lengths = evaluate_policy(
+        policy,
+        env,
+        n_eval_episodes=30,
+        return_episode_rewards=True,
+    )
+
+    print(f"Reward after training: {np.mean(rewards)}")
+    print(f"Lengths: {np.mean(lengths)}")
+    # count how many episodes have a length lower than 500
+    success_rate = np.sum(np.array(lengths) < 500) / len(lengths)
+    print('Success Rate: ', round(success_rate, 4))
