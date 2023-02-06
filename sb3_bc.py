@@ -5,8 +5,6 @@ from utils import process_transitions, make_env
 
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.sac.policies import SACPolicy
-from imitation.policies.base import FeedForward32Policy
 from imitation.algorithms import bc
 import torch as th
 
@@ -22,7 +20,7 @@ if __name__ == "__main__":
 
     env = make_env(
         flatten_obs=True,
-        time_limit=200,
+        time_limit=500,
         normalize_obs=False,
         frame_stack=1,
         render_kwargs=None,
@@ -50,15 +48,14 @@ if __name__ == "__main__":
     )
     print("Training a policy using Behavior Cloning")
     bc_trainer.train(n_epochs=500)
-    bc_trainer.save_policy(model_path / 'sac_bc')
+    bc_trainer.save_policy(model_path / 'bc_policy')
 
     rewards, lengths = evaluate_policy(
         bc_trainer.policy,
         env,
-        n_eval_episodes=4,
+        n_eval_episodes=30,
         return_episode_rewards=True,
     )
 
     print(f"Reward after training: {np.mean(rewards)}")
     print(f"Lengths: {np.mean(lengths)}")
-

@@ -14,15 +14,19 @@ def process_trajectory(data):
     return Trajectory(obs, acts, None, terminal=True)
 
 
-def process_transitions(trial_path: str):
+def process_transitions(trial_path: str, images: bool = False):
     from imitation.data.rollout import flatten_trajectories
-    # traverse the directory and load the npz files
-    # process each file into a trajectory
     trial_path = Path(trial_path)
     trajectories = []
     for episode_path in trial_path.iterdir():
+        print('Processing: ', episode_path)
         data = np.load(episode_path / "trajectory.npz", allow_pickle=True)
         data = dict(data)
+        if images:
+            data.setdefault('pixels', [])
+            images_path = episode_path / "images"
+            for image_path in images_path.iterdir():
+                data['pixels'].append(plt.imread(image_path)[0].flatten())
         trajectories.append(process_trajectory(data))
     transitions = flatten_trajectories(trajectories)
     print(
@@ -109,7 +113,7 @@ class Application(Application):
         self._input_map.bind(self._move_right,  user_input.KEY_RIGHT)
         self.null_action = np.zeros(2)
         self._step = 0
-        self._episode = 8
+        self._episode = 0
         self._policy = None
         self._trajectory = {}
         self._trial_path = trial_path
@@ -187,3 +191,8 @@ def launch(environment_loader, policy=None, title='Explorer', width=1024,
     app = Application(title=title, width=width,
                       height=height, trial_path=trial_path)
     app.launch(environment_loader=environment_loader, policy=policy)
+
+
+if __name__ == "__main__":
+    trial_path = Path('rl/expert/trial_1')
+    transitions = process_transitions(trial_path)

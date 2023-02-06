@@ -15,7 +15,7 @@ if __name__ == "__main__":
     for path in [log_path, model_path]:
         path.mkdir(parents=True, exist_ok=True)
 
-    policy = reconstruct_policy(model_path / 'sac_bc')
+    policy = reconstruct_policy(model_path / 'bc_policy')
 
     env = make_env(
         flatten_obs=True,
