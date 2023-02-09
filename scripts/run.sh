@@ -40,7 +40,7 @@ export OMP_NUM_THREADS=$SLURM_NTASKS
 # module load libs/cudnn/8.1.0_cuda11.2
 # module load compilers/gcc/7.4.0
 # activate environment
-conda activate ray
+conda activate cathsim-dev
 
 # List all modules
 # module list
