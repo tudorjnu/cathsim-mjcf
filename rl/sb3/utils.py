@@ -119,6 +119,7 @@ def make_vec_env(num_env: int = None,
 
 
 def train(algo: str,
+          indice: int,
           experiment: str,
           time_steps: int = 500_000,
           evaluate: bool = True,
@@ -145,21 +146,18 @@ def train(algo: str,
                             env,
                             device=device,
                             verbose=1,
-                            tensorboard_log=log_path)
+                            tensorboard_log=log_path,
+                            **kwargs)
 
-    model.learn(total_timesteps=time_steps, progress_bar=True)
-    model.save(model_path / f'{algo}.zip')
+    model.learn(total_timesteps=time_steps,
+                tb_log_name=f'{algo}_{indice}',
+                progress_bar=True)
+    model.save(model_path / f'{algo}_{indice}.zip')
 
     if evaluate:
-        from stable_baselines3.common.evaluation import evaluate_policy
-        import numpy as np
-        rewards, lengths = evaluate_policy(
-            model, env, n_eval_episodes=30, return_episode_rewards=True)
-        print(f'Average reward: {rewards.mean()}')
-        print(f'Average length: {lengths.mean()}')
-        print(
-            f'Success rate: {np.sum(lengths < np.max(lengths)) / len(rewards)}')
-        np.savez(eval_path / algo, rewards=rewards, lengths=lengths)
+        rewards, lengths, success_rate = eval_policy(model, env, 2, eval_path)
+        np.savez(eval_path / f'{algo}_{indice}',
+                 rewards=rewards, lengths=lengths)
 
 
 def visualize_agent(algo, experiment):
@@ -307,12 +305,13 @@ def record_expert_trajectories(trial_name: Path):
 def eval_policy(model, env, n_eval_episodes, eval_path, **kwargs):
     from stable_baselines3.common.evaluation import evaluate_policy
 
-    rewards, lengths = evaluate_policy(model, env, n_eval_episodes, **kwargs)
+    rewards, lengths = evaluate_policy(model, env, n_eval_episodes,
+                                       return_episode_rewards=True, **kwargs)
     print(f'Average reward: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}')
     print(f'Average length: {np.mean(lengths):.2f} +/- {np.std(lengths):.2f}')
-    success_rate = np.sum(lengths < lengths.max()) / len(lengths)
+    success_rate = np.sum(lengths < np.max(lengths)) / len(lengths)
     print(f'Success rate: {success_rate:.2f}')
-    np.savez(eval_path, rewards=rewards, lengths=lengths)
+    return rewards, lengths, success_rate
 
 
 def cmd_record_traj(args=None):

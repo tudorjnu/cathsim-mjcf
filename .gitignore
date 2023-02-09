@@ -2,6 +2,7 @@
 checkpoints/
 stl2mjcf.py
 rl/vit/
+rl/sb3/experiments/
 .sync*
 
 
