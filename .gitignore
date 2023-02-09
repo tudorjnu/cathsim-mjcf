@@ -1,11 +1,7 @@
 # Folders
-videos/
-model/
-stl2mjcf/*
 checkpoints/
 stl2mjcf.py
-data/
-rl/expert/trial_1_backup/
+rl/vit/
 
 
 # Byte-compiled / optimized / DLL files
