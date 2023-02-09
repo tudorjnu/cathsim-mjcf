@@ -73,9 +73,22 @@ class Application(Application):
         self._input_map.bind(self._move_back, user_input.KEY_DOWN)
         self._input_map.bind(self._move_left, user_input.KEY_LEFT)
         self._input_map.bind(self._move_right, user_input.KEY_RIGHT)
+        self.null_action = np.zeros(2)
+        self._step = 0
+        self._policy = None
+
+    def _initialize_episode(self):
+        self._restart_runtime()
+        self._step = 0
 
     def perform_action(self):
-        self._advance_simulation()
+        print(f'step {self._step:03}')
+        time_step = self._runtime._time_step
+        if not time_step.last():
+            self._advance_simulation()
+            self._step += 1
+        else:
+            self._initialize_episode()
 
     def _move_forward(self):
         self._runtime._default_action = [1, 0]
@@ -83,41 +96,25 @@ class Application(Application):
 
     def _move_back(self):
         self._runtime._default_action = [-1, 0]
-        self._advance_simulation()
+        self.perform_action()
 
     def _move_left(self):
         self._runtime._default_action = [0, -1]
-        self._advance_simulation()
+        self.perform_action()
 
     def _move_right(self):
         self._runtime._default_action = [0, 1]
-        self._advance_simulation()
+        self.perform_action()
 
 
 def launch(environment_loader, policy=None, title='Explorer', width=1024,
            height=768, trial_path=None):
-    """Launches an environment viewer.
-
-    Args:
-      environment_loader: An environment loader (a callable that returns an
-        instance of dm_control.rl.control.Environment), an instance of
-        dm_control.rl.control.Environment.
-      policy: An optional callable corresponding to a policy to execute within the
-        environment. It should accept a `TimeStep` and return a numpy array of
-        actions conforming to the output of `environment.action_spec()`.
-      title: Application title to be displayed in the title bar.
-      width: Window width, in pixels.
-      height: Window height, in pixels.
-    Raises:
-        ValueError: When 'environment_loader' argument is set to None.
-    """
     app = Application(title=title, width=width, height=height)
     app.launch(environment_loader=environment_loader, policy=policy)
 
 
 def run_env(args=None):
     from argparse import ArgumentParser
-    from dm_control.viewer import launch
     from dm_control import composer
     from cathsim.env import Phantom, Tip, Guidewire, Navigate
 

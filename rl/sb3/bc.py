@@ -12,10 +12,9 @@ from imitation.algorithms import bc
 
 
 if __name__ == "__main__":
-    model_path, log_path, eval_path = make_experiment("test")
+    model_path, log_path, eval_path = make_experiment("trial_2")
 
     rng = np.random.default_rng(0)
-
     env = make_vec_env()
 
     trial_path = Path.cwd() / "rl" / "expert" / "trial_2"
@@ -26,6 +25,7 @@ if __name__ == "__main__":
         action_space=env.action_space,
         lr_schedule=lambda _: th.finfo(th.float32).max,
     )
+
     bc_trainer = bc.BC(
         observation_space=env.observation_space,
         action_space=env.action_space,
@@ -33,9 +33,10 @@ if __name__ == "__main__":
         demonstrations=transitions,
         rng=rng,
     )
+
     print("Training a policy using Behavior Cloning")
     bc_trainer.train(n_epochs=800)
-    bc_trainer.save_policy(model_path / 'bc_baseline')
+    bc_trainer.save_policy(model_path / 'bc_baseline.zip')
 
     rewards, lengths = evaluate_policy(
         bc_trainer.policy,

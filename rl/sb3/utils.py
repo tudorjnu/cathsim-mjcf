@@ -323,4 +323,4 @@ def cmd_record_traj(args=None):
 
 
 if __name__ == '__main__':
-    cmd_record_traj()
+    visualize_agent('sac', 'test')
