@@ -38,7 +38,7 @@ TIP_N_BODIES = 2
 _GRAVITY = [0, 0, -9.81]
 _DENSITY = 1000
 _VISCOSITY = 0.0009 * 4
-_MARGIN = 0.004
+_MARGIN = 0.005
 _INTEGRATOR = 'implicit'  # euler, implicit, rk4
 _CONE = 'pyramidal'  # pyramidal, elliptic
 _JACOBIAN = 'sparse'  # dense, sparse
@@ -175,6 +175,7 @@ class Phantom(composer.Entity):
             scale=[SCALE for i in range(3)])
         self._rgba[-1] = 0.3
         self._mjcf_root.find('geom', 'visual').rgba = self._rgba
+        self._mjcf_root.find('mesh', 'phantom3').scale = [1.005 for i in range(3)]
 
     @property
     def mjcf_model(self):
