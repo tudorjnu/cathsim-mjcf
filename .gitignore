@@ -1,7 +1,6 @@
 # Folders
-checkpoints/
-stl2mjcf.py
-rl/vit/
+rl/models/trained/
+rl/models/logs/
 rl/sb3/experiments/
 .sync*
 

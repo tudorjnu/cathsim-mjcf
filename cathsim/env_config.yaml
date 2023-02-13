@@ -1,0 +1,17 @@
+default_time_limit: 2
+control_timestep : .004
+num_substeps : 3
+# OPTIONS
+gravity : [0, 0, -9.81]
+density : 1000
+viscosity : 0.0009 * 4
+margin : 0.004
+integrator : 'implicit'  # euler, implicit, rk4
+cone : 'pyramidal'  # pyramidal, elliptic
+jacobian : 'sparse'  # dense, sparse
+solver : 'newton'  # cg, newton, pgs
+# FLAGS
+multiccd : 'disable'
+frictionloss : "enable"
+
+

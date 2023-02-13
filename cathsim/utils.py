@@ -1,12 +1,14 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from dm_control.viewer.application import Application
 
 
-def make_env(flatten_obs: bool = True, time_limit: int = 300,
-             normalize_obs: bool = True, frame_stack: int = 1,
-             render_kwargs: dict = None, env_kwargs: dict = None,
-             gym_version: str = 'gym', task_kwargs: dict = {}):
+def make_env(
+        gym_version: str = 'gym',
+        render_kwargs: dict = {},
+        env_kwargs: dict = {},
+        task_kwargs: dict = {},
+        wrapper_kwargs: dict = {},
+):
     """
     Create a gym environment from cathsim, dm_control environment.
 
@@ -27,10 +29,12 @@ def make_env(flatten_obs: bool = True, time_limit: int = 300,
     from dm_control import composer
     if gym_version == 'gym':
         from gym import wrappers
-        from cathsim.wrappers.wrapper_gym import DMEnv
+        from cathsim.wrappers.gym_wrapper import DMEnv
+        from gym import spaces
     elif gym_version == 'gymnasium':
         from gymnasium import wrappers
         from wrapper_gymnasium import DMEnv
+
     phantom = Phantom()
     tip = Tip(n_bodies=4)
     guidewire = Guidewire(n_bodies=80)
@@ -50,16 +54,37 @@ def make_env(flatten_obs: bool = True, time_limit: int = 300,
         render_kwargs=render_kwargs,
         env_kwargs=env_kwargs,
     )
+
+    env = wrappers.TimeLimit(env,
+                             max_episode_steps=wrapper_kwargs.get('time_limit', 300))
     if gym_version == 'gymnasium':
         env = wrappers.EnvCompatibility(env, render_mode='rgb_array')
-    if flatten_obs:
+    if wrapper_kwargs.get('use_pixels', False):
+        from gym.wrappers.pixel_observation import PixelObservationWrapper
+        env = PixelObservationWrapper(
+            env,
+            wrapper_kwargs.get('pixels_only', False)
+        )
+    if wrapper_kwargs.get('use_obs', None):
+        env = wrappers.FilterObservation(
+            env, filter_keys=wrapper_kwargs.get('use_obs'))
+    if wrapper_kwargs.get('flatten_obs', False):
         env = wrappers.FlattenObservation(env)
-    if time_limit is not None:
-        env = wrappers.TimeLimit(env, max_episode_steps=time_limit)
-    if normalize_obs:
+    if type(env.observation_space) is spaces.Dict and len(env.observation_space.keys()) == 1:
+        from cathsim.wrappers.gym_wrapper import Dict2Array
+        env = Dict2Array(env)
+    if wrapper_kwargs.get('use_pixels', False):
+        from cathsim.wrappers.gym_wrapper import MultiInputImageWrapper
+        env = MultiInputImageWrapper(
+            env,
+            grayscale=wrapper_kwargs.get('grayscale', False),
+            resize_shape=wrapper_kwargs.get('resize_shape', 80),
+            image_key=wrapper_kwargs.get('image_key', 'pixels'),
+        )
+    if wrapper_kwargs.get('normalize_obs', False):
         env = wrappers.NormalizeObservation(env)
-    if frame_stack > 1:
-        env = wrappers.FrameStack(env, frame_stack)
+    if wrapper_kwargs.get('frame_stack', 1) > 1:
+        env = wrappers.FrameStack(env, wrapper_kwargs.get('frame_stack', 1))
     return env
 
 
@@ -145,4 +170,15 @@ def run_env(args=None):
 
 
 if __name__ == "__main__":
-    run_env(args=None)
+    from gym.utils.env_checker import check_env
+    wrapper_kwargs = dict(
+        time_limit=300,
+        use_pixels=True,
+        grayscale=False,
+        resize_shape=80,
+    )
+    env = make_env(
+        wrapper_kwargs=wrapper_kwargs,
+    )
+
+    check_env(env)

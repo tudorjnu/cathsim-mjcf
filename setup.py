@@ -14,6 +14,8 @@ extra_rl = [
     'rich',
 ]
 
+extra = extra_dev + extra_rl
+
 
 setup(
     name='cathsim',
@@ -25,7 +27,8 @@ setup(
         exclude=[
             'tests',
             'scripts',
-            'notebooks'
+            'notebooks',
+            'figures',
         ]
     ),
     install_requires=[
@@ -35,6 +38,7 @@ setup(
     extras_require={
         'dev': extra_dev,
         'rl': extra_rl,
+        'all': extra,
     },
     entry_points={
         'console_scripts': [

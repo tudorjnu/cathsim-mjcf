@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 
 from dm_control import mjcf
+from dm_control import mujoco
 from dm_control import composer
 from dm_control.composer import variation
 from dm_control.composer.variation import distributions, noises
@@ -38,7 +39,7 @@ TIP_N_BODIES = 2
 _GRAVITY = [0, 0, -9.81]
 _DENSITY = 1000
 _VISCOSITY = 0.0009 * 4
-_MARGIN = 0.005
+_MARGIN = 0.004
 _INTEGRATOR = 'implicit'  # euler, implicit, rk4
 _CONE = 'pyramidal'  # pyramidal, elliptic
 _JACOBIAN = 'sparse'  # dense, sparse
@@ -361,6 +362,24 @@ class TipObservables(composer.Observables):
         return observable.MJCFFeature('qvel', all_joints)
 
 
+class Physics(mujoco.Physics):
+    """Physics simulation with additional features for the Acrobot domain."""
+
+    def join_vel(self):
+        """Returns the joint velocities."""
+        return self.data.qvel
+
+    def join_pos(self):
+        """Returns the joint positions."""
+        return self.data.qpos
+
+    def to_target(self):
+        """Returns the distance from the tip to the target."""
+        tip_to_target = (self.named.data.site_xpos['target']
+                         - self.named.data.xpos['tip'])
+        return np.linalg.norm(tip_to_target)
+
+
 class Navigate(composer.Task):
 
     def __init__(self,
@@ -447,15 +466,14 @@ class Navigate(composer.Task):
         self.success = False
 
     def get_reward(self, physics):
-        head_pos = physics.named.data.geom_xpos[-1]
-        reward = self.compute_reward(head_pos, self._target_pos)
+        self.head_pos = self._get_head_pos(physics)
+        reward = self.compute_reward(self.head_pos, self._target_pos)
         return reward
 
     def should_terminate_episode(self, physics):
         return self.success
 
-    @property
-    def head_pos(self, physics):
+    def _get_head_pos(self, physics):
         return physics.named.data.geom_xpos[-1]
 
     def compute_reward(self, achieved_goal, desired_goal):

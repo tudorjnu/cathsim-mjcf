@@ -19,65 +19,6 @@ ALGOS = {
 }
 
 
-def process_trajectory(data):
-    from imitation.data.types import Trajectory
-    acts = data.pop('action')[:-1]
-    obs = []
-    for key, value in data.items():
-        obs.append(value)
-    obs = np.concatenate(obs, axis=1)
-    return Trajectory(obs, acts, None, terminal=True)
-
-
-def process_transitions(trial_path: str, images: bool = False):
-    from imitation.data.rollout import flatten_trajectories
-    from matplotlib import pyplot as plt
-    trial_path = Path(trial_path)
-    trajectories = []
-    for episode_path in trial_path.iterdir():
-        print('Processing: ', episode_path)
-        data = np.load(episode_path / "trajectory.npz", allow_pickle=True)
-        data = dict(data)
-        if images:
-            data.setdefault('pixels', [])
-            images_path = episode_path / "images"
-            for image_path in images_path.iterdir():
-                data['pixels'].append(plt.imread(image_path))
-        trajectories.append(process_trajectory(data))
-    transitions = flatten_trajectories(trajectories)
-    print(
-        f'Processed {len(trajectories)} trajectories ({len(transitions)} transitions)')
-    trajectory_lengths = [len(traj) for traj in trajectories]
-    print('mean trajectory length:', np.mean(trajectory_lengths))
-
-    return transitions
-
-
-def process_image_transitions(trial_path: str, images: bool = False):
-    from imitation.data.rollout import flatten_trajectories
-    from matplotlib import pyplot as plt
-    trial_path = Path(trial_path)
-    trajectories = []
-    for episode_path in trial_path.iterdir():
-        trajectory = {}
-        data = np.load(episode_path / "trajectory.npz", allow_pickle=True)
-        data = dict(data)
-        trajectory['action'] = data['action']
-        trajectory.setdefault('pixels', [])
-        images_path = episode_path / "images"
-        for image_path in images_path.iterdir():
-            image = plt.imread(image_path)[:, :, 0]
-            trajectory['pixels'].append(image)
-        trajectories.append(process_trajectory(trajectory))
-    transitions = flatten_trajectories(trajectories)
-    print(
-        f'Processed {len(trajectories)} trajectories ({len(transitions)} transitions)')
-    trajectory_lengths = [len(traj) for traj in trajectories]
-    print('mean trajectory length:', np.mean(trajectory_lengths))
-
-    return transitions
-
-
 def make_experiment(experiment_name='trial_0'):
     from pathlib import Path
     experiment_path = Path(__file__).parent / 'experiments' / experiment_name
@@ -89,12 +30,22 @@ def make_experiment(experiment_name='trial_0'):
     return model_path, log_path, eval_path
 
 
-def make_env(env_kwargs: dict = {}, monitor_wrapper=False,) -> Callable:
+def make_env(
+    env_kwargs: dict = {},
+    wrapper_kwargs: dict = {},
+    render_kwargs: dict = {},
+        monitor_wrapper=False,
+) -> Callable:
+
     import gym
     from cathsim.utils import make_env
 
     def _init() -> gym.Env:
-        env = make_env(**env_kwargs)
+        env = make_env(
+            wrapper_kwargs=wrapper_kwargs,
+            env_kwargs=env_kwargs,
+            render_kwargs=render_kwargs
+        )
         if monitor_wrapper:
             from stable_baselines3.common.monitor import Monitor
             env = Monitor(env)
@@ -106,13 +57,20 @@ def make_vec_env(num_env: int = None,
                  monitor_wrapper=True,
                  monitor_kwargs: dict = {},
                  env_kwargs: dict = {},
+                 render_kwargs: dict = {},
+                 wrapper_kwargs: dict = {},
                  **kwargs):
     from stable_baselines3.common.vec_env import SubprocVecEnv
     if num_env is None:
         num_env = os.cpu_count() // 2
-    vec_env = SubprocVecEnv([make_env(**kwargs) for _ in range(num_env)])
+    vec_env = SubprocVecEnv([
+        make_env(
+            wrapper_kwargs=wrapper_kwargs,
+            env_kwargs=env_kwargs,
+            render_kwargs=render_kwargs,
+            **kwargs) for _ in range(num_env)])
     if monitor_wrapper:
-        print('Monitor wrapper enabled')
+        print('VecMonitor wrapper enabled')
         from stable_baselines3.common.vec_env import VecMonitor
         vec_env = VecMonitor(vec_env)
     return vec_env
@@ -127,22 +85,29 @@ def train(algo: str,
           n_envs: int = None,
           vec_env: bool = True,
           env_kwargs: dict = {},
+          wrapper_kwargs: dict = {},
+          algo_kwargs: dict = {},
           **kwargs):
     n_envs = n_envs or os.cpu_count() // 2
     model_path, log_path, eval_path = make_experiment(experiment)
 
     if vec_env:
-        env = make_vec_env(n_envs, env_kwargs=env_kwargs, monitor_wrapper=True)
+        env = make_vec_env(
+            n_envs,
+            env_kwargs=env_kwargs,
+            wrapper_kwargs=wrapper_kwargs,
+            monitor_wrapper=True
+        )
     else:
         from cathsim.utils import make_env
         env = make_env(env_kwargs)
 
-    if (model_path / f'{algo}.zip').exists():
+    if (model_path / f'{algo}_{indice}.zip').exists():
         print(f'Loading {algo} model from {experiment} experiment.')
-        model = ALGOS[algo].load(model_path / f'{algo}.zip')
+        model = ALGOS[algo].load(model_path / f'{algo}_{indice}.zip')
     else:
         print(f'Training {algo} model in {experiment} experiment.')
-        model = ALGOS[algo]('MlpPolicy',
+        model = ALGOS[algo](algo_kwargs.get('policy', 'MlpPolicy'),
                             env,
                             device=device,
                             verbose=1,
@@ -152,10 +117,11 @@ def train(algo: str,
     model.learn(total_timesteps=time_steps,
                 tb_log_name=f'{algo}_{indice}',
                 progress_bar=True)
+
     model.save(model_path / f'{algo}_{indice}.zip')
 
     if evaluate:
-        rewards, lengths, success_rate = eval_policy(model, env, 2, eval_path)
+        rewards, lengths, success_rate = eval_policy(model, env, 20, eval_path)
         np.savez(eval_path / f'{algo}_{indice}',
                  rewards=rewards, lengths=lengths)
 

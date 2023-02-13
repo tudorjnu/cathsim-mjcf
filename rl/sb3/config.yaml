@@ -1,0 +1,5 @@
+training_parameters:
+  - device: 'cuda'
+learning_params:
+  - time_steps: 600_000
+

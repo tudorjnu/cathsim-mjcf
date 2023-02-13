@@ -11,8 +11,8 @@ if __name__ == "__main__":
 
     vec_env = make_vec_env()
 
-    model = ALGOS[ALGO](policy='MlpPolicy', env=vec_env, verbose=1,
-                        tensorboard_log=log_path / 'bc_finetuned', seed=0)
+    model = ALGOS[ALGO](policy='MlpPolicy', env=vec_env, verbose=1, device='cpu',
+                        tensorboard_log=log_path, seed=0)
     model.policy = policy
     model.learn(total_timesteps=500_000, progress_bar=True)
-    model.save(model_path / 'bc_finetuned')
+    model.save(model_path / 'bc_finetuned.zip')
