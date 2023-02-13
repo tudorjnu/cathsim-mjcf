@@ -1,17 +1,14 @@
 from utils import train
 
-EXP_NAME = "test_multi_input"
+EXP_NAME = "multi_input"
 ALGO = "sac"
 policy = 'MultiInputPolicy'
-N_TRAININGS = 1
+N_TRAININGS = 10
 
 if __name__ == "__main__":
     wrapper_kwargs = dict(
         time_limit=300,
         use_pixels=True,
-        # use_obs=[
-        #     'pixels',
-        # ],
         grayscale=True,
         resize_shape=80,
     )
@@ -28,8 +25,8 @@ if __name__ == "__main__":
             algo=ALGO,
             indice=i,
             experiment=EXP_NAME,
-            device='cpu',
-            n_envs=2,
+            device='cuda',
+            n_envs=8,
             time_steps=500_000,
             evaluate=True,
             env_kwargs=env_kwargs,
