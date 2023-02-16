@@ -4,6 +4,8 @@ import torch
 from gym import spaces
 from stable_baselines3.common.type_aliases import TensorDict
 from stable_baselines3.common.preprocessing import is_image_space, get_flattened_obs_dim
+# from rl.models.simple_vit import SimpleViT
+from vit_pytorch.simple_vit import SimpleViT
 
 
 class ViTPolicy(BaseFeaturesExtractor):
@@ -27,7 +29,6 @@ class ViTPolicy(BaseFeaturesExtractor):
     ) -> None:
         super().__init__(observation_space, features_dim)
         from stable_baselines3.common.preprocessing import is_image_space
-        from rl.models.mobile_vit import MobileViT
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
         assert is_image_space(observation_space, check_channels=False, normalized_image=normalized_image), (
@@ -41,24 +42,16 @@ class ViTPolicy(BaseFeaturesExtractor):
             "you should pass `normalize_images=False`: \n"
             "https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html"
         )
-        # from rl.models.mobile_vit import MobileViT
-        from vit_pytorch.mobile_vit import MobileViT
         n_input_channels = observation_space.shape[0]
-        # self.vit = SimpleViT(
-        #     channels=n_input_channels,
-        #     image_size=image_size,
-        #     patch_size=patch_size,
-        #     num_classes=features_dim,
-        #     dim=512,
-        #     depth=6,
-        #     heads=8,
-        #     mlp_dim=2048
-        # )
-        self.vit = MobileViT(
-            image_size=(image_size, image_size),
-            dims=[96, 120, 144],
-            channels=[16, 32, 48, 48, 64, 64, 80, 80, 96, 96, 384],
+        self.vit = SimpleViT(
+            channels=n_input_channels,
+            image_size=image_size,
+            patch_size=patch_size,
             num_classes=features_dim,
+            dim=512,
+            depth=6,
+            heads=8,
+            mlp_dim=2048
         )
 
         # Compute shape by doing one forward pass

@@ -1,7 +1,8 @@
 from utils import train
+from rl.models.vit_policy import CombinedExtractor
 # from stable_baselines3.common.torch_layers import CombinedExtractor
 
-EXP_NAME = "multi_input_2"
+EXP_NAME = "testing_vit"
 ALGO = "sac"
 policy = 'MultiInputPolicy'
 N_TRAININGS = 6
@@ -25,6 +26,14 @@ if __name__ == "__main__":
 
     algo_kwargs = dict(
         policy='MultiInputPolicy',
+        policy_kwargs=dict(
+            features_extractor_class=CombinedExtractor,
+            features_extractor_kwargs=dict(
+                features_dim=256,
+                image_size=task_kwargs['image_size'],
+                patch_size=task_kwargs['image_size'] // 16,
+            ),
+        )
     )
 
     env_kwargs = dict(
