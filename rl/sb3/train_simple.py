@@ -44,7 +44,7 @@ if __name__ == "__main__":
             indice=i,
             experiment=EXP_NAME,
             device='cuda',
-            n_envs=8,
+            # n_envs=8,
             time_steps=500_000,
             evaluate=True,
             env_kwargs=env_kwargs,
