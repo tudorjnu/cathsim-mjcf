@@ -10,10 +10,16 @@ from dm_env import specs
 def convert_dm_control_to_gym_space(dm_control_space):
     r"""Convert dm_control space to gym space. """
     if isinstance(dm_control_space, specs.BoundedArray):
-        space = spaces.Box(low=dm_control_space.minimum,
-                           high=dm_control_space.maximum,
-                           dtype=np.float32)
-        assert space.shape == dm_control_space.shape
+        if len(dm_control_space.shape) > 1:
+            space = spaces.Box(low=0,
+                               high=255,
+                               shape=dm_control_space.shape,
+                               dtype=dm_control_space.dtype)
+        else:
+            space = spaces.Box(low=dm_control_space.minimum,
+                               high=dm_control_space.maximum,
+                               shape=dm_control_space.shape,
+                               dtype=np.float32)
         return space
     elif isinstance(dm_control_space, specs.Array) and not isinstance(dm_control_space, specs.BoundedArray):
         space = spaces.Box(low=-float('inf'),
@@ -22,24 +28,21 @@ def convert_dm_control_to_gym_space(dm_control_space):
                            dtype=np.float32)
         return space
     elif isinstance(dm_control_space, dict):
-        space = spaces.Dict({key: convert_dm_control_to_gym_space(value)
-                             for key, value in dm_control_space.items()})
+        space = spaces.Dict()
+        for key, value in dm_control_space.items():
+            space[key] = convert_dm_control_to_gym_space(value)
         return space
 
 
 class DMEnv(gym.Env):
-    def __init__(self, env, env_kwargs: dict = {}, render_kwargs: dict = {}):
+    def __init__(self, env, env_kwargs: dict = {}):
 
         self._env = env
         self.metadata = {'render.modes': ['rgb_array'],
                          'video.frames_per_second': round(1.0 / self._env.control_timestep())}
 
         self.env_kwargs = env_kwargs
-        self.render_kwargs = render_kwargs
-
-        self.render_kwargs.get('camera_id', 0)
-        self.render_kwargs.get('height', 256)
-        self.render_kwargs.get('width', 256)
+        self.image_size = self._env.task.image_size
 
         self.action_space = convert_dm_control_to_gym_space(
             self._env.action_spec())
@@ -59,7 +62,6 @@ class DMEnv(gym.Env):
         info = dict(
             head_pos=self._env._task.head_pos
         )
-
         return observation, reward, done, info
 
     def reset(self):
@@ -67,12 +69,9 @@ class DMEnv(gym.Env):
         obs = self._get_obs(timestep)
         return obs
 
-    def render(self, mode="rgb_array", height=256, width=256, camera_id=0):
-        height = self.render_kwargs.get('height', height)
-        width = self.render_kwargs.get('width', width)
-        camera_id = self.render_kwargs.get('camera_id', camera_id)
+    def render(self, mode="rgb_array"):
         img = self._env.physics.render(
-            height=height, width=width, camera_id=camera_id)
+            height=self.image_size, width=self.image_size, camera_id=0)
         return img
 
     def close(self):
@@ -84,7 +83,7 @@ class DMEnv(gym.Env):
     def _get_obs(self, timestep):
         obs = timestep.observation
         for key, value in obs.items():
-            if isinstance(value, np.ndarray):
+            if value.dtype == np.float64:
                 obs[key] = value.astype(np.float32)
         return obs
 
@@ -106,13 +105,11 @@ class MultiInputImageWrapper(gym.ObservationWrapper):
         env: gym.Env,
         grayscale: bool = False,
         keep_dim: bool = True,
-        resize_shape: int = None,
         image_key: str = 'pixels',
     ):
         super(MultiInputImageWrapper, self).__init__(env)
         self.grayscale = grayscale
         self.keep_dim = keep_dim
-        self.resize_shape = resize_shape
         self.image_key = image_key
 
         image_space = self.observation_space.spaces[self.image_key]
@@ -136,19 +133,10 @@ class MultiInputImageWrapper(gym.ObservationWrapper):
                     dtype=image_space.dtype,
                 )
 
-        if self.resize_shape:
-            image_space = spaces.Box(
-                low=0, high=255,
-                shape=(resize_shape, resize_shape, image_space.shape[2]),
-                dtype=image_space.dtype
-            )
-
         self.observation_space[self.image_key] = image_space
 
     def observation(self, observation):
         image = observation[self.image_key]
-        if self.resize_shape:
-            image = cv2.resize(image, (self.resize_shape, self.resize_shape))
         if self.grayscale:
             image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
             if self.keep_dim:
@@ -159,27 +147,44 @@ class MultiInputImageWrapper(gym.ObservationWrapper):
 
 if __name__ == "__main__":
     from gym.utils.env_checker import check_env
-    from cathsim.utils import make_env
-    import cv2
+    from cathsim.env import Phantom, Tip, Guidewire, Navigate
+    from dm_control import composer
+
+    task_kwargs = dict(
+        use_pixels=True,
+        use_segment=True,
+        image_size=30,
+    )
 
     wrapper_kwargs = dict(
-        use_pixels=True,
-        use_obs=[
-            'pixels',
-        ],
         grayscale=True,
-        resize_shape=128,
     )
-    env = make_env(
-        wrapper_kwargs=wrapper_kwargs
+
+    phantom = Phantom()
+    tip = Tip(n_bodies=4)
+    guidewire = Guidewire(n_bodies=80)
+
+    task = Navigate(
+        phantom=phantom,
+        guidewire=guidewire,
+        tip=tip,
+        **task_kwargs,
     )
+
+    env = composer.Environment(
+        task=task,
+        random_state=np.random.RandomState(42),
+        strip_singleton_obs_buffer_dim=True,
+    )
+
+    env = DMEnv(
+        env=env,
+    )
+
+    env = MultiInputImageWrapper(
+        env,
+        grayscale=wrapper_kwargs.get('grayscale', False),
+        image_key=wrapper_kwargs.get('image_key', 'pixels'),
+    )
+
     check_env(env)
-    obs = env.reset()
-    done = False
-    print(obs.shape)
-    while not done:
-        action = env.action_space.sample()
-        obs, reward, done, info = env.step(action)
-        image = env.render()
-        cv2.imshow('image', obs)
-        cv2.waitKey(1)

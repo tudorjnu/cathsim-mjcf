@@ -1,18 +1,23 @@
 import numpy as np
-
 import gym
 from gym import spaces
-
 from dm_env import specs
+from dm_control import composer
 
 
 def convert_dm_control_to_gym_space(dm_control_space):
     r"""Convert dm_control space to gym space. """
     if isinstance(dm_control_space, specs.BoundedArray):
-        space = spaces.Box(low=dm_control_space.minimum,
-                           high=dm_control_space.maximum,
-                           dtype=np.float32)
-        assert space.shape == dm_control_space.shape
+        if len(dm_control_space.shape) > 1:
+            space = spaces.Box(low=0,
+                               high=255,
+                               shape=dm_control_space.shape,
+                               dtype=dm_control_space.dtype)
+        else:
+            space = spaces.Box(low=dm_control_space.minimum,
+                               high=dm_control_space.maximum,
+                               shape=dm_control_space.shape,
+                               dtype=np.float32)
         return space
     elif isinstance(dm_control_space, specs.Array) and not isinstance(dm_control_space, specs.BoundedArray):
         space = spaces.Box(low=-float('inf'),
@@ -21,36 +26,60 @@ def convert_dm_control_to_gym_space(dm_control_space):
                            dtype=np.float32)
         return space
     elif isinstance(dm_control_space, dict):
-        space = spaces.Dict({key: convert_dm_control_to_gym_space(value)
-                             for key, value in dm_control_space.items()})
+        space = spaces.Dict()
+        for key, value in dm_control_space.items():
+            space[key] = convert_dm_control_to_gym_space(value)
         return space
 
 
 class DMEnv(gym.GoalEnv):
-    def __init__(self, env, env_kwargs: dict = {}, render_kwargs: dict = {}):
+    def __init__(self,
+                 env: composer.Environment,
+                 env_kwargs: dict = {},
+                 ):
 
         self._env = env
+        self.set_goal(np.array([-0.043272, 0.136586, 0.034102], dtype=np.float32))
         self.metadata = {'render.modes': ['rgb_array'],
                          'video.frames_per_second': round(1.0 / self._env.control_timestep())}
 
         self.env_kwargs = env_kwargs
-        self.render_kwargs = render_kwargs
-
-        self.render_kwargs.get('camera_id', 0)
-        self.render_kwargs.get('height', 256)
-        self.render_kwargs.get('width', 256)
+        self.image_size = self._env.task.image_size
 
         self.action_space = convert_dm_control_to_gym_space(
             self._env.action_spec())
-        self.observation_space = spaces.Dict(
-            observation=convert_dm_control_to_gym_space(
-                self._env.observation_spec()
+        self.observation_space = convert_dm_control_to_gym_space(
+            self._env.observation_spec())
+
+        self.observation_space = spaces.Dict({
+            'observation': self.observation_space,
+            'achieved_goal': spaces.Box(
+                low=0,
+                high=1,
+                shape=(3,),
+                dtype=np.float32
             ),
-            achieved_goal=spaces.Box(-1., 1., shape=(3,), dtype=np.float32),
-            desired_goal=spaces.Box(-1., 1., shape=(3,), dtype=np.float32),
+            'desired_goal': spaces.Box(
+                low=0,
+                high=1,
+                shape=(3,),
+                dtype=np.float32
+            )
+        })
+
+        self.observation_space['achieved_goal'] = spaces.Box(
+            low=0,
+            high=1,
+            shape=(3,),
+            dtype=np.float32
         )
 
-        self.desired_goal = self._env.desired_goal
+        self.observation_space['desired_goal'] = spaces.Box(
+            low=0,
+            high=1,
+            shape=(3,),
+            dtype=np.float32
+        )
 
         self.viewer = None
 
@@ -63,9 +92,7 @@ class DMEnv(gym.GoalEnv):
         reward = timestep.reward
         done = timestep.last()
         info = dict(
-            head_pos=self._env._task.head_pos
         )
-
         return observation, reward, done, info
 
     def reset(self):
@@ -73,11 +100,9 @@ class DMEnv(gym.GoalEnv):
         obs = self._get_obs(timestep)
         return obs
 
-    def render(self, mode="rgb_array", height=256, width=256, camera_id=0):
-        height = self.render_kwargs.get('height', height)
-        width = self.render_kwargs.get('width', width)
-        camera_id = self.render_kwargs.get('camera_id', camera_id)
-        img = self._env.physics.render(height=height, width=width, camera_id=camera_id)
+    def render(self, mode="rgb_array"):
+        img = self._env.physics.render(
+            height=self.image_size, width=self.image_size, camera_id=0)
         return img
 
     def close(self):
@@ -89,47 +114,79 @@ class DMEnv(gym.GoalEnv):
     def _get_obs(self, timestep):
         obs = timestep.observation
         for key, value in obs.items():
-            if isinstance(value, np.ndarray):
+            if value.dtype == np.float64:
                 obs[key] = value.astype(np.float32)
+        obs = dict(
+            observation=obs,
+            achieved_goal=self.achieved_goal,
+            desired_goal=self.desired_goal,
+        )
         return obs
+
+    @property
+    def achieved_goal(self):
+        return self._env.task._get_head_pos(self._env.physics).astype(np.float32)
 
     def compute_reward(self, achieved_goal, desired_goal, info):
-        reward = self._env.compute_reward(achieved_goal, desired_goal)
+        reward = self._env.task.compute_reward(achieved_goal, desired_goal)
         return reward
 
+    @property
+    def desired_goal(self):
+        return self._env.task._target_pos
 
-class Dict2Array(gym.ObservationWrapper):
-    def __init__(self, env):
-        super(Dict2Array, self).__init__(env)
-        self.observation_space = next(iter(self.observation_space.values()))
-
-    def observation(self, observation):
-        obs = next(iter(observation.values()))
-        return obs
+    def set_goal(self, goal):
+        self._env.task._target_pos = goal
 
 
 if __name__ == "__main__":
-    from cathsim.utils import make_env
-    import cv2
+    from gym.utils.env_checker import check_env
+    from cathsim.env import Phantom, Tip, Guidewire, Navigate
+    from dm_control import composer
+
+    task_kwargs = dict(
+        use_pixels=True,
+        use_segment=True,
+        image_size=30,
+    )
 
     wrapper_kwargs = dict(
-        use_pixels=True,
-        use_obs=[
-            'pixels',
-        ],
         grayscale=True,
-        resize_shape=128,
     )
 
-    env = make_env(
-        wrapper_kwargs=wrapper_kwargs
+    phantom = Phantom()
+    tip = Tip(n_bodies=4)
+    guidewire = Guidewire(n_bodies=80)
+
+    task = Navigate(
+        phantom=phantom,
+        guidewire=guidewire,
+        tip=tip,
+        **task_kwargs,
     )
+
+    env = composer.Environment(
+        task=task,
+        random_state=np.random.RandomState(42),
+        strip_singleton_obs_buffer_dim=True,
+    )
+
+    env = DMEnv(
+        env=env,
+    )
+
     obs = env.reset()
-    done = False
-    print(obs.shape)
-    while not done:
+    for key, value in obs.items():
+        if key != 'observation':
+            print(key, value.shape, value.dtype)
+        else:
+            for k, v in value.items():
+                print(k, v.shape, v.dtype)
+    print('\n')
+    for i in range(1):
         action = env.action_space.sample()
         obs, reward, done, info = env.step(action)
-        image = env.render()
-        cv2.imshow('image', obs)
-        cv2.waitKey(1)
+        print('achieved_goal', obs['achieved_goal'], obs['achieved_goal'].dtype, obs['achieved_goal'].shape)
+        print('desired_goal', obs['desired_goal'], obs['desired_goal'].dtype, obs['desired_goal'].shape)
+
+    check_env(env)

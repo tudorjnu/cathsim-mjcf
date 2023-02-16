@@ -44,6 +44,7 @@ setup(
         'console_scripts': [
             'run_env=cathsim.utils:run_env',
             'record_traj=rl.sb3.utils:cmd_record_traj',
+            'visualise_agent=rl.sb3.utils:cmd_visualize_agent',
         ],
     },
 )

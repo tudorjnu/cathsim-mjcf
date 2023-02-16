@@ -3,13 +3,17 @@ import cv2
 import numpy as np
 from pathlib import Path
 
+import collections
+
 from dm_control import mjcf
 from dm_control import mujoco
+from dm_control.mujoco import wrapper
 from dm_control import composer
 from dm_control.composer import variation
 from dm_control.composer.variation import distributions, noises
 from dm_control.composer.observation import observable
 from dm_control.composer.observation.observable import MujocoCamera
+from dm_env import specs
 
 
 _DEFAULT_TIME_LIMIT = 2
@@ -27,7 +31,7 @@ TWIST = False
 STRETCH = False
 FORCE = 300 * SCALE
 STIFFNESS = 20
-TARGET_POS = (-0.043272, 0.136586, 0.034102)
+TARGET_POS = np.array([-0.043272, 0.136586, 0.034102])
 CONDIM = 1
 FRICTION = [0.1]  # default: [1, 0.005, 0.0001]
 SPRING = 0.05
@@ -118,24 +122,41 @@ class Scene(composer.Arena):
 
 class CameraObservable(MujocoCamera):
     def __init__(self, camera_name, height=128, width=128, corruptor=None,
-                 depth=False, preprocess=True, grayscale=True):
-        super().__init__(camera_name, height, width, corruptor, depth)
+                 depth=False, preprocess=False, grayscale=False,
+                 segmentation=False, scene_option=None):
+        super().__init__(camera_name, height, width)
+        self._dtype = np.uint8
+        self._n_channels = 1 if segmentation else 3
         self._preprocess = preprocess
-        self._grayscale = grayscale
-        self._dtype = np.float32 if depth or grayscale or preprocess else np.int8
-        self._n_channels = 1 if depth or grayscale else 3
+        self.scene_option = scene_option
+        self.segmentation = segmentation
 
     def _callable(self, physics):
         def get_image():
             image = physics.render(  # pylint: disable=g-long-lambda
-                self._height, self._width, self._camera_name, depth=self._depth)
-            if self._grayscale:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            if self._preprocess and not self._depth:
-                image = image / 255.0 - 0.5
+                self._height, self._width, self._camera_name, depth=self._depth,
+                scene_option=self.scene_option, segmentation=self.segmentation)
+            if self.segmentation:
+                geom_ids = image[:, :, 0]
+                if np.all(geom_ids == -1):
+                    return np.zeros((self._height, self._width, 1), dtype=self._dtype)
+                geom_ids = geom_ids.astype(np.float64) + 1
+                geom_ids = geom_ids / geom_ids.max()
+                image = 255 * geom_ids
+                image = np.expand_dims(image, axis=-1)
+            image = image.astype(self._dtype)
             return image
 
         return get_image
+
+    @property
+    def array_spec(self):
+        return specs.BoundedArray(
+            shape=(self._height, self._width, self._n_channels),
+            dtype=self._dtype,
+            minimum=0,
+            maximum=255,
+        )
 
 
 def add_body(
@@ -178,7 +199,7 @@ class Phantom(composer.Entity):
         self._mjcf_root.find('geom', 'visual').rgba = self._rgba
         self._mjcf_root.find('mesh', 'phantom3').scale = [1.005 for i in range(3)]
 
-    @property
+    @ property
     def mjcf_model(self):
         return self._mjcf_root
 
@@ -251,38 +272,37 @@ class Guidewire(composer.Entity):
         for n in range(1, n_bodies):
             parent = add_body(n, parent, stiffness=stiffness)
             stiffness *= 0.995
-        # print('stiffness', stiffness)
         self._tip_site = parent.add(
             'site', name='tip_site', pos=[0, 0, OFFSET])
 
-    @property
+    @ property
     def attachment_site(self):
         return self._tip_site
 
-    @property
+    @ property
     def mjcf_model(self):
         return self._mjcf_root
 
     def _build_observables(self):
         return GuidewireObservables(self)
 
-    @property
+    @ property
     def actuators(self):
         return tuple(self._mjcf_root.find_all('actuator'))
 
-    @property
+    @ property
     def joints(self):
         return tuple(self._mjcf_root.find_all('joint'))
 
 
 class GuidewireObservables(composer.Observables):
 
-    @composer.observable
+    @ composer.observable
     def joint_positions(self):
         all_joints = self._entity.mjcf_model.find_all('joint')
         return observable.MJCFFeature('qpos', all_joints)
 
-    @composer.observable
+    @ composer.observable
     def joint_velocities(self):
         all_joints = self._entity.mjcf_model.find_all('joint')
         return observable.MJCFFeature('qvel', all_joints)
@@ -333,51 +353,51 @@ class Tip(composer.Entity):
 
         self.head_geom.name = 'head'
 
-    @property
+    @ property
     def mjcf_model(self):
         return self._mjcf_root
 
-    @property
+    @ property
     def joints(self):
         return tuple(self._mjcf_root.find_all('joint'))
 
     def _build_observables(self):
         return TipObservables(self)
 
-    @property
+    @ property
     def head_geom(self):
         return self._mjcf_root.find_all('geom')[-1]
 
 
 class TipObservables(composer.Observables):
 
-    @composer.observable
+    @ composer.observable
     def joint_positions(self):
         all_joints = self._entity.mjcf_model.find_all('joint')
         return observable.MJCFFeature('qpos', all_joints)
 
-    @composer.observable
+    @ composer.observable
     def joint_velocities(self):
         all_joints = self._entity.mjcf_model.find_all('joint')
         return observable.MJCFFeature('qvel', all_joints)
 
 
 class Physics(mujoco.Physics):
-    """Physics simulation with additional features for the Acrobot domain."""
+    """Physics simulation with additional features for the Fish domain."""
 
-    def join_vel(self):
+    def joint_velocities(self, joints):
         """Returns the joint velocities."""
-        return self.data.qvel
+        return self.named.data.qvel[joints]
 
-    def join_pos(self):
+    def joint_positions(self, joints):
         """Returns the joint positions."""
-        return self.data.qpos
+        return self.named.data.qpos[joints]
 
-    def to_target(self):
-        """Returns the distance from the tip to the target."""
-        tip_to_target = (self.named.data.site_xpos['target']
-                         - self.named.data.xpos['tip'])
-        return np.linalg.norm(tip_to_target)
+    def head_to_target(self):
+        """Returns a vector, from mouth to target in local coordinate of mouth."""
+        data = self.named.data
+        mouth_to_target_global = data.geom_xpos['target'] - data.geom_xpos['head']
+        return mouth_to_target_global.dot(data.geom_xmat['mouth'].reshape(3, 3))
 
 
 class Navigate(composer.Task):
@@ -390,14 +410,17 @@ class Navigate(composer.Task):
                  delta: float = 0.004,  # distance threshold for success
                  dense_reward: bool = True,
                  success_reward: float = 10.0,
-                 use_image: bool = False,
+                 use_pixels: bool = False,
+                 use_segment: bool = False,
                  image_size: int = 480,
                  ):
 
         self.delta = delta
         self.dense_reward = dense_reward
         self.success_reward = success_reward
-        self.use_image = use_image
+        self.use_pixels = use_pixels
+        self.use_segment = use_segment
+        self.image_size = image_size
 
         self._arena = Scene("arena")
         if phantom is not None:
@@ -420,25 +443,36 @@ class Navigate(composer.Task):
 
         # Configure and enable observables
         pos_corrptor = noises.Additive(distributions.Normal(scale=0.0001))
-        self._guidewire.observables.joint_positions.corruptor = pos_corrptor
         vel_corruptor = noises.Multiplicative(
             distributions.LogNormal(sigma=0.0001))
-        self._guidewire.observables.joint_velocities.corruptor = vel_corruptor
-
-        self._guidewire.observables.joint_positions.enabled = True
-        self._guidewire.observables.joint_velocities.enabled = True
-
-        self._tip.observables.joint_positions.enabled = True
-        self._tip.observables.joint_velocities.enabled = True
 
         self._task_observables = {}
 
-        if self.use_image:
-            self._task_observables['top_camera'] = CameraObservable(
+        if self.use_pixels:
+            self._task_observables['pixels'] = CameraObservable(
                 camera_name='top_camera',
                 width=image_size,
                 height=image_size,
             )
+
+        if self.use_segment:
+            guidewire_option = wrapper.MjvOption()
+            guidewire_option.geomgroup = np.zeros_like(guidewire_option.geomgroup)
+            guidewire_option.geomgroup[1] = 1  # show the guidewire
+            guidewire_option.geomgroup[2] = 1  # show the tip
+            self._task_observables['guidewire'] = CameraObservable(
+                camera_name='top_camera',
+                height=image_size,
+                width=image_size,
+                scene_option=guidewire_option,
+                segmentation=True
+            )
+
+        self._task_observables['joint_pos'] = observable.Generic(self.get_joint_positions)
+        self._task_observables['joint_vel'] = observable.Generic(self.get_joint_velocities)
+
+        self._task_observables['joint_pos'].corruptor = pos_corrptor
+        self._task_observables['joint_vel'].corruptor = vel_corruptor
 
         for obs in self._task_observables.values():
             obs.enabled = True
@@ -447,11 +481,14 @@ class Navigate(composer.Task):
 
         self.success = False
 
-    @property
+        self.guidewire_joints = [joint.name for joint in self._guidewire.joints]
+        self.tip_joints = [joint.name for joint in self._tip.joints]
+
+    @ property
     def root_entity(self):
         return self._arena
 
-    @property
+    @ property
     def task_observables(self):
         return self._task_observables
 
@@ -470,6 +507,9 @@ class Navigate(composer.Task):
         reward = self.compute_reward(self.head_pos, self._target_pos)
         return reward
 
+    def set_target(self, target_pos):
+        self._target_pos = target_pos
+
     def should_terminate_episode(self, physics):
         return self.success
 
@@ -486,6 +526,20 @@ class Navigate(composer.Task):
             reward = self.success_reward if success else -1.0
         self.success = success
         return reward
+
+    def get_observation(self, physics):
+        obs = collections.OrderedDict()
+        obs['joint_angles'] = physics.joint_angles()
+        obs['velocity'] = physics.velocity()
+        return obs
+
+    def get_joint_positions(self, physics):
+        positions = physics.named.data.qpos
+        return positions
+
+    def get_joint_velocities(self, physics):
+        velocities = physics.named.data.qvel
+        return velocities
 
 
 def run_env(args=None):
@@ -506,6 +560,8 @@ def run_env(args=None):
         phantom=phantom,
         guidewire=guidewire,
         tip=tip,
+        use_pixels=True,
+        use_segment=True,
     )
 
     env = composer.Environment(
@@ -515,7 +571,39 @@ def run_env(args=None):
         strip_singleton_obs_buffer_dim=True,
     )
 
-    launch(env)
+    time_step = env.reset()
+
+    for k, v in env.observation_spec().items():
+        print(k, v.dtype, v.shape)
+
+    def plot_obs(obs):
+        import matplotlib.pyplot as plt
+        top_camera = obs['pixels']
+        phantom = obs['phantom']
+        guidewire = obs['guidewire']
+
+        # plot the phantom and guidewire in subplot
+        fig, ax = plt.subplots(1, 3)
+        ax[0].imshow(top_camera)
+        ax[0].axis('off')
+        ax[0].set_title('top_camera')
+        ax[1].imshow(phantom)
+        ax[1].set_title('phantom segmentation')
+        ax[1].axis('off')
+        ax[2].imshow(guidewire)
+        ax[2].set_title('guidewire segmentation')
+        ax[2].axis('off')
+        plt.show()
+        print(np.unique(guidewire))
+
+    for i in range(200):
+        action = np.zeros(env.action_spec().shape)
+        action[0] = 1
+        time_step = env.step(action)
+        for k, v in time_step.observation.items():
+            print(k, v.shape, v.dtype, v.min(), v.max())
+        if i % 10 == 0:
+            plot_obs(time_step.observation)
 
 
 if __name__ == "__main__":

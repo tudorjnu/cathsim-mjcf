@@ -1,11 +1,8 @@
 import torch
-import pytorch_lightning as pl
 from torch import nn
 
 from einops import rearrange
 from einops.layers.torch import Rearrange
-
-# helpers
 
 
 def pair(t):
@@ -87,10 +84,9 @@ class Transformer(nn.Module):
         return x
 
 
-class SimpleViTLightning(pl.LightningModule):
+class SimpleViT(nn.Module):
     def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels=3, dim_head=64):
         super().__init__()
-        self.save_hyperparameters()
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
 
@@ -126,14 +122,3 @@ class SimpleViTLightning(pl.LightningModule):
 
         x = self.to_latent(x)
         return self.linear_head(x)
-
-    def training_step(self, batch, batch_idx):
-        obs, acts = batch
-        preds = self.forward(obs)
-        loss = nn.functional.mse_loss(preds, acts)
-        self.log("train_loss", loss)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        return optimizer

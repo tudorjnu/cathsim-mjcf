@@ -30,49 +30,57 @@ def make_experiment(experiment_name='trial_0'):
     return model_path, log_path, eval_path
 
 
-def make_env(
-    env_kwargs: dict = {},
-    wrapper_kwargs: dict = {},
-    render_kwargs: dict = {},
-        monitor_wrapper=False,
-) -> Callable:
-
-    import gym
-    from cathsim.utils import make_env
-
-    def _init() -> gym.Env:
-        env = make_env(
-            wrapper_kwargs=wrapper_kwargs,
-            env_kwargs=env_kwargs,
-            render_kwargs=render_kwargs
-        )
-        if monitor_wrapper:
-            from stable_baselines3.common.monitor import Monitor
-            env = Monitor(env)
-        return env
-    return _init
-
-
-def make_vec_env(num_env: int = None,
-                 monitor_wrapper=True,
-                 monitor_kwargs: dict = {},
-                 env_kwargs: dict = {},
-                 render_kwargs: dict = {},
-                 wrapper_kwargs: dict = {},
-                 **kwargs):
+def make_vec_env(
+    num_env: int = None,
+        monitor_wrapper=True,
+        monitor_kwargs: dict = {},
+        env_kwargs: dict = {},
+        render_kwargs: dict = {},
+        wrapper_kwargs: dict = {},
+        task_kwargs: dict = {},
+        **kwargs
+):
     from stable_baselines3.common.vec_env import SubprocVecEnv
+
+    def make_env(
+        env_kwargs: dict = {},
+        wrapper_kwargs: dict = {},
+        render_kwargs: dict = {},
+        task_kwargs: dict = {},
+            monitor_wrapper=False,
+    ) -> Callable:
+
+        import gym
+        from cathsim.utils import make_env
+
+        def _init() -> gym.Env:
+            env = make_env(
+                wrapper_kwargs=wrapper_kwargs,
+                env_kwargs=env_kwargs,
+                render_kwargs=render_kwargs,
+                task_kwargs=task_kwargs
+            )
+            if monitor_wrapper:
+                from stable_baselines3.common.monitor import Monitor
+                env = Monitor(env)
+            return env
+        return _init
+
     if num_env is None:
         num_env = os.cpu_count() // 2
+
     vec_env = SubprocVecEnv([
         make_env(
             wrapper_kwargs=wrapper_kwargs,
             env_kwargs=env_kwargs,
+            task_kwargs=task_kwargs,
             render_kwargs=render_kwargs,
             **kwargs) for _ in range(num_env)])
+
     if monitor_wrapper:
-        print('VecMonitor wrapper enabled')
         from stable_baselines3.common.vec_env import VecMonitor
         vec_env = VecMonitor(vec_env)
+        print('VecMonitor wrapper enabled')
     return vec_env
 
 
@@ -85,6 +93,7 @@ def train(algo: str,
           n_envs: int = None,
           vec_env: bool = True,
           env_kwargs: dict = {},
+          task_kwargs: dict = {},
           wrapper_kwargs: dict = {},
           algo_kwargs: dict = {},
           **kwargs):
@@ -96,22 +105,30 @@ def train(algo: str,
             n_envs,
             env_kwargs=env_kwargs,
             wrapper_kwargs=wrapper_kwargs,
+            task_kwargs=task_kwargs,
             monitor_wrapper=True
         )
     else:
         from cathsim.utils import make_env
-        env = make_env(env_kwargs)
+        env = make_env(
+            env_kwargs=env_kwargs,
+            wrapper_kwargs=wrapper_kwargs,
+            task_kwargs=task_kwargs
+        )
 
     if (model_path / f'{algo}_{indice}.zip').exists():
         print(f'Loading {algo} model from {experiment} experiment.')
         model = ALGOS[algo].load(model_path / f'{algo}_{indice}.zip')
     else:
+        for key, value in algo_kwargs.items():
+            print(f'{key}: {value}')
         print(f'Training {algo} model in {experiment} experiment.')
         model = ALGOS[algo](algo_kwargs.get('policy', 'MlpPolicy'),
                             env,
                             device=device,
                             verbose=1,
                             tensorboard_log=log_path,
+                            policy_kwargs=algo_kwargs.get('policy_kwargs', {}),
                             **kwargs)
 
     model.learn(total_timesteps=time_steps,
@@ -126,11 +143,18 @@ def train(algo: str,
                  rewards=rewards, lengths=lengths)
 
 
-def visualize_agent(algo, experiment):
+def cmd_visualize_agent(args=None):
     import cv2
     from cathsim.utils import make_env
-    model_path, log_path, eval_path = make_experiment(experiment)
-    model = ALGOS[algo].load(model_path / f'{algo}.zip')
+    import argparse as ap
+    parser = ap.ArgumentParser()
+    parser.add_argument('--path', type=str)
+    args = parser.parse_args()
+    path = Path.cwd() / args.path
+    print(path)
+    algo = path.name.split('_')[0]
+
+    model = ALGOS[algo].load(path)
     env = make_env()
     obs = env.reset()
     done = False
@@ -289,4 +313,37 @@ def cmd_record_traj(args=None):
 
 
 if __name__ == '__main__':
-    visualize_agent('sac', 'test')
+    from rl.models.vit_policy import CombinedExtractor
+    # from stable_baselines3.common.torch_layers import CombinedExtractor
+    from cathsim.utils import make_env
+    from stable_baselines3.common.env_checker import check_env
+    import os
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb: 1000"
+
+    task_kwargs = dict(
+        use_pixels=True,
+        use_segment=False,
+        image_size=256,
+    )
+
+    wrapper_kwargs = dict(
+        time_limit=300,
+        grayscale=True,
+        use_obs=[
+            'joint_pos',
+            'joint_vel',
+            'pixels',
+        ],
+    )
+    policy_kwargs = dict(
+        features_extractor_class=CombinedExtractor,
+        features_extractor_kwargs=dict(
+            # features_dim=256,
+            image_size=(task_kwargs['image_size'], task_kwargs['image_size']),
+        ),
+    )
+
+    env = make_env(task_kwargs=task_kwargs, wrapper_kwargs=wrapper_kwargs)
+
+    model = SAC("MultiInputPolicy", env, policy_kwargs=policy_kwargs, verbose=1, device='cuda')
+    model.learn(1000, progress_bar=True)
