@@ -1,4 +1,5 @@
 import os
+import torch
 from pathlib import Path
 from typing import Callable
 
@@ -141,6 +142,7 @@ def train(algo: str,
         rewards, lengths, success_rate = eval_policy(model, env, 20, eval_path)
         np.savez(eval_path / f'{algo}_{indice}',
                  rewards=rewards, lengths=lengths)
+    torch.cuda.empty_cache()
 
 
 def cmd_visualize_agent(args=None):

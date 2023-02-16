@@ -20,7 +20,7 @@
 # so please request 6*Ngpu CPU cores, i.e., 6 CPU cores for 1 GPU, 12 CPU cores for 2 GPUs, and so on.
 # User may request more CPU cores for jobs that need very large CPU memory occasionally, 
 # but the number of CPU cores should not be greater than 6*Ngpu+5. Please email hpc-support if you need to do so.)
-#SBATCH -n 6
+#SBATCH -n 12
 # Set time limit in format a-bb:cc:dd, where a is days, b is hours, c is minutes, and d is seconds.
 #SBATCH -t 3-00:00:00
 # PLEASE don't set the memory option as we should use the default memory which is based on the number of cores 
