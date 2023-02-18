@@ -1,38 +1,37 @@
 from utils import train
 from rl.models.vit_policy import CombinedExtractor
 
-EXP_NAME = "testing_simple"
+EXP_NAME = "testing_vit"
 ALGO = "sac"
 policy = 'MultiInputPolicy'
 N_TRAININGS = 6
 
 if __name__ == "__main__":
     task_kwargs = dict(
-        # use_pixels=True,
+        use_pixels=True,
         # use_segment=True,
-        # image_size=80,
+        image_size=80,
     )
 
     wrapper_kwargs = dict(
         time_limit=300,
-        # grayscale=True,
-        # use_obs=[
-        #     'joint_pos',
-        #     'joint_vel',
-        #     'pixels',
-        # ],
+        grayscale=True,
+        use_obs=[
+            'joint_pos',
+            'joint_vel',
+            'pixels',
+        ],
+    )
+
+    features_extractor_kwargs = dict(
     )
 
     algo_kwargs = dict(
         policy='MultiInputPolicy',
-        # policy_kwargs=dict(
-        #     features_extractor_class=CombinedExtractor,
-        #     features_extractor_kwargs=dict(
-        #         features_dim=256,
-        #         image_size=task_kwargs['image_size'],
-        #         patch_size=task_kwargs['image_size'] // 16,
-        #     ),
-        # )
+        policy_kwargs=dict(
+            features_extractor_class=CombinedExtractor,
+            features_extractor_kwargs=features_extractor_kwargs,
+        )
     )
 
     env_kwargs = dict(

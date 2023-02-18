@@ -69,9 +69,10 @@ class DMEnv(gym.Env):
         obs = self._get_obs(timestep)
         return obs
 
-    def render(self, mode="rgb_array"):
+    def render(self, mode="rgb_array", image_size=None):
+        image_size = image_size if image_size else self.image_size
         img = self._env.physics.render(
-            height=self.image_size, width=self.image_size, camera_id=0)
+            height=image_size, width=image_size, camera_id=0)
         return img
 
     def close(self):
